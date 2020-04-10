@@ -307,7 +307,7 @@ EXPORT_SYMBOL_GPL(vmbus_send_modifychannel);
  */
 static int create_gpadl_header(enum hv_gpadl_type type, void *kbuffer,
 			       u32 size, u32 send_offset,
-			       struct vmbus_channel_msginfo **msginfo)
+			       struct vmbus_channel_msginfo **msginfo, u32 visibility)
 {
 	int i;
 	int pagecount;
@@ -456,7 +456,7 @@ nomem:
 static int __vmbus_establish_gpadl(struct vmbus_channel *channel,
 				   enum hv_gpadl_type type, void *kbuffer,
 				   u32 size, u32 send_offset,
-				   u32 *gpadl_handle)
+				   u32 *gpadl_handle, u32 visibility)
 {
 	struct vmbus_channel_gpadl_header *gpadlmsg;
 	struct vmbus_channel_gpadl_body *gpadl_body;
@@ -470,7 +470,8 @@ static int __vmbus_establish_gpadl(struct vmbus_channel *channel,
 	next_gpadl_handle =
 		(atomic_inc_return(&vmbus_connection.next_gpadl_handle) - 1);
 
-	ret = create_gpadl_header(type, kbuffer, size, send_offset, &msginfo);
+	ret = create_gpadl_header(type, kbuffer, size, send_offset,
+				  &msginfo, visibility);
 	if (ret)
 		return ret;
 
@@ -561,10 +562,10 @@ cleanup:
  * @gpadl_handle: some funky thing
  */
 int vmbus_establish_gpadl(struct vmbus_channel *channel, void *kbuffer,
-			  u32 size, u32 *gpadl_handle)
+			  u32 size, u32 *gpadl_handle, u32 visibility)
 {
 	return __vmbus_establish_gpadl(channel, HV_GPADL_BUFFER, kbuffer, size,
-				       0U, gpadl_handle);
+				       0U, gpadl_handle, visibility);
 }
 EXPORT_SYMBOL_GPL(vmbus_establish_gpadl);
 
@@ -675,10 +676,11 @@ static int __vmbus_open(struct vmbus_channel *newchannel,
 	newchannel->ringbuffer_gpadlhandle = 0;
 
 	err = __vmbus_establish_gpadl(newchannel, HV_GPADL_RING,
-				      page_address(newchannel->ringbuffer_page),
-				      (send_pages + recv_pages) << PAGE_SHIFT,
-				      newchannel->ringbuffer_send_offset << PAGE_SHIFT,
-				      &newchannel->ringbuffer_gpadlhandle);
+			page_address(newchannel->ringbuffer_page),
+			(send_pages + recv_pages) << PAGE_SHIFT,
+			newchannel->ringbuffer_send_offset << PAGE_SHIFT,
+			&newchannel->ringbuffer_gpadlhandle,
+			VMBUS_PAGE_VISIBLE_READ_WRITE);
 	if (err)
 		goto error_clean_ring;
 
