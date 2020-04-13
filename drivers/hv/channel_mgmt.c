@@ -336,6 +336,18 @@ fw_error:
 EXPORT_SYMBOL_GPL(vmbus_prep_negotiate_resp);
 
 /*
+ * free_channel - Release the resources used by the vmbus channel object
+ */
+static void free_channel(struct vmbus_channel *channel)
+{
+	tasklet_kill(&channel->callback_event);
+	vmbus_remove_channel_attr_group(channel);
+
+	kobject_put(&channel->kobj);
+	hv_free_channel_ivm(channel);
+}
+
+/*
  * alloc_channel - Allocate and initialize a vmbus channel object
  */
 static struct vmbus_channel *alloc_channel(void)
@@ -357,17 +369,6 @@ static struct vmbus_channel *alloc_channel(void)
 	hv_ringbuffer_pre_init(channel);
 
 	return channel;
-}
-
-/*
- * free_channel - Release the resources used by the vmbus channel object
- */
-static void free_channel(struct vmbus_channel *channel)
-{
-	tasklet_kill(&channel->callback_event);
-	vmbus_remove_channel_attr_group(channel);
-
-	kobject_put(&channel->kobj);
 }
 
 void vmbus_channel_map_relid(struct vmbus_channel *channel)
@@ -509,6 +510,8 @@ static void vmbus_add_channel_work(struct work_struct *work)
 		if (vmbus_add_channel_kobj(dev, newchannel))
 			goto err_deq_chan;
 
+		hv_init_channel_ivm(newchannel);
+
 		if (primary_channel->sc_creation_callback != NULL)
 			primary_channel->sc_creation_callback(newchannel);
 
@@ -542,6 +545,10 @@ static void vmbus_add_channel_work(struct work_struct *work)
 	}
 
 	newchannel->probe_done = true;
+
+	if (hv_init_channel_ivm(newchannel))
+		goto err_deq_chan;
+
 	return;
 
 err_deq_chan:

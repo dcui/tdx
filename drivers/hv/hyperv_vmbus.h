@@ -20,6 +20,7 @@
 #include <linux/hyperv.h>
 #include <linux/interrupt.h>
 
+#include <asm/mshyperv.h>
 #include "hv_trace.h"
 
 /*
@@ -56,6 +57,19 @@ union hv_monitor_trigger_state {
 		u32 rsvdz:28;
 	};
 };
+
+/*
+ * All vmbus channels initially start with zero bounce pages and are required
+ * to set any non-zero size, if needed.
+ */
+#define HV_DEFAULT_BOUNCE_BUFFER_PAGES  0
+
+/* MIN should be a power of 2 */
+#define HV_MIN_BOUNCE_BUFFER_PAGES	64
+
+extern int hv_init_channel_ivm(struct vmbus_channel *channel);
+
+extern void hv_free_channel_ivm(struct vmbus_channel *channel);
 
 /* struct hv_monitor_page Layout */
 /* ------------------------------------------------------ */
