@@ -59,6 +59,18 @@ union hv_monitor_trigger_state {
 };
 
 /*
+ * Hyper-V bounce packet. Each in-use bounce packet is mapped to a vmbus
+ * transaction and contains a list of bounce pages for that transaction.
+ */
+struct hv_bounce_pkt {
+	/* Link to the next bounce packet, when it is in the free list */
+	struct list_head link;
+	struct list_head bounce_page_head;
+	u32 flags;
+};
+
+
+/*
  * All vmbus channels initially start with zero bounce pages and are required
  * to set any non-zero size, if needed.
  */
