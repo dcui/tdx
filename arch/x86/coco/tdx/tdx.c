@@ -12,6 +12,10 @@
 #include <asm/insn-eval.h>
 #include <asm/pgtable.h>
 #include <asm/io.h>
+#include <asm/apic.h>
+#include <asm/idtentry.h>
+#include <asm/irq_regs.h>
+#include <asm/desc.h>
 
 /* TDX module Call Leaf IDs */
 #define TDX_GET_INFO			1
@@ -47,6 +51,28 @@
 /* TDX hypercall error codes */
 #define TDVMCALL_GET_QUOTE_ERR		0x8000000000000000
 #define TDVMCALL_GET_QUOTE_QGS_UNAVIL	0x8000000000000001
+
+/*
+ * Handler used to report notifications about
+ * TDX_GUEST_EVENT_NOTIFY_VECTOR IRQ. Currently it will be
+ * used only by the attestation driver. So, race condition
+ * with read/write operation is not considered.
+ */
+static void (*tdx_event_notify_handler)(void);
+
+/* Helper function to register tdx_event_notify_handler */
+void tdx_setup_ev_notify_handler(void (*handler)(void))
+{
+        tdx_event_notify_handler = handler;
+}
+EXPORT_SYMBOL_GPL(tdx_setup_ev_notify_handler);
+
+/* Helper function to unregister tdx_event_notify_handler */
+void tdx_remove_ev_notify_handler(void)
+{
+        tdx_event_notify_handler = NULL;
+}
+EXPORT_SYMBOL_GPL(tdx_remove_ev_notify_handler);
 
 /*
  * Wrapper for standard use of __tdx_hypercall with no output aside from
@@ -110,6 +136,21 @@ static inline void tdx_module_call(u64 fn, u64 rcx, u64 rdx, u64 r8, u64 r9,
 {
 	if (__tdx_module_call(fn, rcx, rdx, r8, r9, out))
 		panic("TDCALL %lld failed (Buggy TDX module!)\n", fn);
+}
+
+/* TDX guest event notification handler */
+DEFINE_IDTENTRY_SYSVEC(sysvec_tdx_event_notify)
+{
+	struct pt_regs *old_regs = set_irq_regs(regs);
+
+	inc_irq_stat(irq_tdx_event_notify_count);
+
+	if (tdx_event_notify_handler)
+		tdx_event_notify_handler();
+
+	ack_APIC_irq();
+
+	set_irq_regs(old_regs);
 }
 
 /*
@@ -820,6 +861,12 @@ void __init tdx_early_init(void)
 	x86_platform.guest.enc_cache_flush_required = tdx_cache_flush_required;
 	x86_platform.guest.enc_tlb_flush_required   = tdx_tlb_flush_required;
 	x86_platform.guest.enc_status_change_finish = tdx_enc_status_changed;
+
+	alloc_intr_gate(TDX_GUEST_EVENT_NOTIFY_VECTOR,
+			asm_sysvec_tdx_event_notify);
+
+	if (tdx_hcall_set_notify_intr(TDX_GUEST_EVENT_NOTIFY_VECTOR))
+		pr_warn("Setting event notification interrupt failed\n");
 
 	pr_info("Guest detected\n");
 }

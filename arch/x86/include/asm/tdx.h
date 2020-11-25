@@ -71,6 +71,10 @@ int tdx_mcall_tdreport(void *data, void *reportdata);
 
 int tdx_hcall_get_quote(void *data, u64 len);
 
+void tdx_setup_ev_notify_handler(void (*handler)(void));
+
+void tdx_remove_ev_notify_handler(void);
+
 #else
 
 static inline void tdx_early_init(void) { };
