@@ -33,6 +33,8 @@
 #include <scsi/scsi_transport.h>
 #include <asm/mshyperv.h>
 
+#include "../hv/hyperv_vmbus.h"
+
 /*
  * All wire protocol details (storage protocol between the guest and the host)
  * are consolidated here.
@@ -741,6 +743,10 @@ static void handle_sc_creation(struct vmbus_channel *new_sc)
 	/* Add the sub-channel to the array of available channels. */
 	stor_device->stor_chns[new_sc->target_cpu] = new_sc;
 	cpumask_set_cpu(new_sc->target_cpu, &stor_device->alloced_cpus);
+
+	if (hv_bounce_resources_reserve(device->channel,
+			stor_device->max_transfer_bytes))
+		pr_warn("Fail to reserve bounce buffer\n");
 }
 
 static void  handle_multichannel_storage(struct hv_device *device, int max_chns)
@@ -984,6 +990,18 @@ static int storvsc_channel_init(struct hv_device *device, bool is_fc)
 	}
 	stor_device->max_transfer_bytes =
 		vstor_packet->storage_channel_properties.max_transfer_bytes;
+
+	/*
+	 * Reserve enough bounce resources to be able to support paging
+	 * operations under low memory conditions, that cannot rely on
+	 * additional resources to be allocated.
+	 */
+	ret =  hv_bounce_resources_reserve(device->channel,
+			stor_device->max_transfer_bytes);
+	if (ret < 0) {
+		pr_warn("Fail to reserve bounce buffer\n");
+		goto done;
+	}
 
 	if (!is_fc)
 		goto done;
@@ -1329,6 +1347,10 @@ static void storvsc_on_channel_callback(void *context)
 					continue;
 				}
 				request = (struct storvsc_cmd_request *)scsi_cmd_priv(scmnd);
+				if (desc->type == VM_PKT_COMP && request->bounce_pkt) {
+					hv_pkt_bounce(channel, request->bounce_pkt);
+					request->bounce_pkt = NULL;
+				}
 			}
 
 			storvsc_on_receive(stor_device, packet, request);
@@ -1349,7 +1371,6 @@ static int storvsc_connect_to_vsp(struct hv_device *device, u32 ring_size,
 
 	memset(&props, 0, sizeof(struct vmstorage_channel_properties));
 
-	device->channel->max_pkt_size = STORVSC_MAX_PKT_SIZE;
 	device->channel->next_request_id_callback = storvsc_next_request_id;
 	device->channel->rqstor_size = scsi_driver.can_queue;
 
