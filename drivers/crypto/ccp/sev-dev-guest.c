@@ -28,6 +28,7 @@
 #include <crypto/aead.h>
 #include <linux/scatterlist.h>
 #include <linux/random.h>
+#include <asm/sev-es.h>
 
 #define DEVICE_NAME		"sev"
 #define AAD_LEN			48
@@ -110,22 +111,12 @@ static int enc_dec_message(struct snp_guest_request_msg_hdr *hdr, uint8_t *src_b
 	return ret;
 }
 
-static int build_request_message(void __user *plaintext, int msg_type,
+static int build_request_message(uint8_t *plaintext, int msg_type,
 				 int msg_version, uint32_t len)
 {
 	struct sev_guest_crypto *crypto = misc_dev->crypto;
 	struct snp_guest_request_msg_hdr *hdr;
-	uint8_t *buf, *payload;
-	int ret;
-
-	buf = kmalloc(len, GFP_KERNEL_ACCOUNT);
-	if (!buf)
-		return -ENOMEM;
-
-	if (copy_from_user(buf, plaintext, len)) {
-		ret = -EFAULT;
-		goto e_free;
-	}
+	uint8_t *payload;
 
 	hdr = (struct snp_guest_request_msg_hdr *)misc_dev->request;
 	payload = (uint8_t *)misc_dev->request + sizeof(*hdr);
@@ -139,18 +130,14 @@ static int build_request_message(void __user *plaintext, int msg_type,
 	hdr->msg_vmpck = 0;
 	hdr->msg_version = msg_version;
 
-	/* Generate a random IV for the encryption */
-	get_random_bytes(hdr->iv, min_t(size_t, crypto->iv_len, sizeof(hdr->iv)));
+	*(uint64_t *)&crypto->iv[0] = msg_seqno;
+	*(uint32_t *)&crypto->iv[sizeof(uint64_t)] = 0;
 
 	/* Encrypt the request payload */
-	ret = enc_dec_message(hdr, buf, payload, hdr->iv, len, true);
-
-e_free:
-	kfree(buf);
-	return ret;
+	return enc_dec_message(hdr, plaintext, payload, crypto->iv, len, true);
 }
 
-static int verify_response_message(int msg_type, int msg_version, int *msg_sz, void *plaintext)
+static int verify_response_message(int msg_type, int msg_version, int *msg_sz, uint8_t *plaintext)
 {
 	struct sev_guest_crypto *crypto = misc_dev->crypto;
 	struct snp_guest_request_msg_hdr *hdr;
@@ -161,7 +148,7 @@ static int verify_response_message(int msg_type, int msg_version, int *msg_sz, v
 	payload = (uint8_t *)misc_dev->response + sizeof(*hdr);
 
 	/* Decrypt the response payload */
-	ret = enc_dec_message(hdr, payload, plaintext, hdr->iv,
+	ret = enc_dec_message(hdr, payload, plaintext, crypto->iv,
 				min_t(size_t, hdr->msg_sz, *msg_sz) + crypto->a_len, false);
 
 	/* Verify the sequence counter is incremented by 1 */
@@ -201,10 +188,43 @@ static int expected_buf_sz(int type)
 	}
 }
 
+static int snp_guest_request(
+	int msg_version,
+	int req_msg_type,
+	uint8_t *req_buf,
+	int req_len,
+	int rsp_msg_type,
+	uint8_t *rsp_buf,
+	int *rsp_len)
+{
+	int ret;
+
+	/* Build the request message per SNP specification */
+	ret = build_request_message(req_buf, req_msg_type,
+				    msg_version, req_len);
+	if (ret)
+		return ret;
+
+	/* Issue the VMGEXIT to formware the request to the SEV firmware. */
+	ret = vmgexit_snp_guest_request(misc_dev->request, misc_dev->response);
+	if (ret) {
+		return ret;
+	}
+
+	/* Now that the VMGEXIT is succesfull, verify the response header */
+	ret = verify_response_message(rsp_msg_type, msg_version, rsp_len, rsp_buf);
+	if (ret)
+		return ret;
+
+	return 0;
+}
+
 static int ioctl_snp_guest_request(struct sev_snp_guest_request *input)
 {
 	uint8_t *rsp_buf;
 	int ret, rsp_len;
+	uint8_t *req_buf;
+	int req_len;
 
 	if ((input->request_len > expected_buf_sz(input->req_msg_type)) ||
 	    (input->response_len < expected_buf_sz(input->rsp_msg_type)))
@@ -218,39 +238,42 @@ static int ioctl_snp_guest_request(struct sev_snp_guest_request *input)
 	 */
 	if (!access_ok(input->response_uaddr, input->response_len))
 		return -EFAULT;
+	if (!access_ok(input->request_uaddr, input->request_len))
+		return -EFAULT;
 
 	rsp_len = input->response_len;
 	rsp_buf = kmalloc(rsp_len, GFP_KERNEL_ACCOUNT);
 	if (!rsp_buf)
 		return -ENOMEM;
 
-	/* Build the request message per SNP specification */
-	ret = build_request_message((void __user *)input->request_uaddr, input->req_msg_type,
-				    input->msg_version, input->request_len);
-	if (ret)
+	req_len = input->request_len;
+	req_buf = kmalloc(req_len, GFP_KERNEL_ACCOUNT);
+	if (!req_buf) {
+		ret = -ENOMEM;
 		goto e_free;
-
-	/* Issue the VMGEXIT to formware the request to the SEV firmware. */
-	ret = vmgexit_snp_guest_request(misc_dev->request, misc_dev->response);
-	if (ret) {
-		/* propogate the error code to userspace */
-		input->error = ret;
-		return ret;
 	}
 
-	/* Now that the VMGEXIT is succesfull, verify the response header */
-	ret = verify_response_message(input->rsp_msg_type, input->msg_version, &rsp_len, rsp_buf);
-	if (ret)
+	if (copy_from_user((void *)req_buf, (void *)input->request_uaddr, req_len)) {
+		ret = -EFAULT;
 		goto e_free;
+	}
+
+	ret = snp_guest_request(input->msg_version, input->req_msg_type, req_buf, req_len,
+							input->rsp_msg_type, rsp_buf, &rsp_len);
+	if (ret) {
+		input->error = ret;
+		goto e_free;
+	}
 
 	/* Copy the response payload back to userspace */
-	if (copy_to_user((void __user *)input->response_uaddr, rsp_buf, rsp_len)) {
+	if (copy_to_user((void __user *)input->response_uaddr, (void *)rsp_buf, rsp_len)) {
 		ret = -EFAULT;
 		goto e_free;
 	}
 
 	input->response_len = rsp_len;
 e_free:
+	kfree(req_buf);
 	kfree(rsp_buf);
 	return ret;
 }
@@ -340,7 +363,7 @@ static struct sev_guest_crypto *init_crypto(void)
 	 * TODO: find the VMPCK and message sequence number through ACPI table.
 	 * Currently, we map the secret page directly to get the VMPCK to test the driver flow.
 	 */
-	secret = (struct secret_page *)memremap(0x801000, PAGE_SIZE, MEMREMAP_WB);
+	secret = (struct secret_page *)ioremap_encrypted(0x801000, PAGE_SIZE);
 	if (!secret) {
 		pr_err("failed to remap 0x801000.\n");
 		return NULL;
@@ -358,6 +381,7 @@ static struct sev_guest_crypto *init_crypto(void)
 		goto e_free_crypto;
 
 	crypto->iv_len = crypto_aead_ivsize(crypto->tfm);
+	BUG_ON(crypto->iv_len != 12);
 	crypto->iv = kmalloc(crypto->iv_len, GFP_KERNEL_ACCOUNT);
 	if (!crypto->iv)
 		goto e_free_crypto;
@@ -373,7 +397,6 @@ static struct sev_guest_crypto *init_crypto(void)
 	crypto->authtag = kmalloc(crypto->a_len, GFP_KERNEL_ACCOUNT);
 	if (!crypto->authtag)
 		goto e_free_crypto;
-
 
 	pr_info("MSG sequence counter: %d\n", msg_seqno);
 	print_hex_dump(KERN_INFO, "VMPCK0 KEY : ", DUMP_PREFIX_NONE, 32, 1, secret->vmpck0, 32, false);
@@ -403,8 +426,11 @@ static int __init sev_guest_mod_init(void)
 {
 	struct miscdevice *misc;
 	int ret;
+	uint8_t snp_report_req[SEV_SNP_REPORT_REQ_BUF_SZ];
+	uint8_t snp_report_rsp[SEV_SNP_REPORT_RSP_BUF_SZ];
+	int rsp_len = SEV_SNP_REPORT_RSP_BUF_SZ;
 
-	if (!mem_encrypt_active())
+	if (!sev_snp_active())
 		return -ENXIO;
 
 	misc_dev = kzalloc(sizeof(*misc_dev), GFP_KERNEL);
@@ -433,6 +459,12 @@ static int __init sev_guest_mod_init(void)
 	misc->minor = MISC_DYNAMIC_MINOR;
 	misc->name = DEVICE_NAME;
 	misc->fops = &sev_guest_fops;
+
+	memset(&snp_report_req[0], 0, sizeof(snp_report_req));
+	memset(&snp_report_rsp[0], 0, sizeof(snp_report_rsp));
+	ret = snp_guest_request(1, SNP_MSG_REPORT_REQ, &snp_report_req[0], sizeof(snp_report_req),
+					  SNP_MSG_REPORT_RSP, &snp_report_rsp[0], &rsp_len);
+	pr_info("SNP guest request report ret=%d\n", ret);
 
 	return misc_register(misc);
 e_free:

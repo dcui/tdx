@@ -20,16 +20,17 @@
  */
 struct snp_guest_request_msg_hdr {
 	__u8 authtag[32];
-	__u8 iv[16];
+	__u64 msg_seqno;
+	__u8 rsvd1[8];
 	__u8 algo;
 	__u8 hdr_version;
 	__u16 hdr_sz;
 	__u8 msg_type;
 	__u8 msg_version;
 	__u16 msg_sz;
-	__u32 msg_seqno;
+	__u32 rsvd2;
 	__u8 msg_vmpck;
-	__u8 rsvd[35];
+	__u8 rsvd3[35];
 } __packed;
 
 /**
