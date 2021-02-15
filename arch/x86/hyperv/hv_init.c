@@ -420,14 +420,10 @@ void __init hyperv_init(void)
 	}
 
 	/*
-	 * hyperv_init() is called before LAPIC is initialized: see
-	 * apic_intr_mode_init() -> x86_platform.apic_post_init() and
-	 * apic_bsp_setup() -> setup_local_APIC(). The direct-mode STIMER
-	 * depends on LAPIC, so hv_stimer_alloc() should be called from
-	 * x86_init.timers.setup_percpu_clockev.
+	 * Ignore any errors in setting up stimer clockevents
+	 * as we can run with the LAPIC timer as a fallback.
 	 */
-	old_setup_percpu_clockev = x86_init.timers.setup_percpu_clockev;
-	x86_init.timers.setup_percpu_clockev = hv_stimer_setup_percpu_clockev;
+	(void)hv_stimer_alloc();
 
 	hv_apic_init();
 
