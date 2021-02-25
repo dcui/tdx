@@ -303,6 +303,38 @@ int vmbus_send_modifychannel(struct vmbus_channel *channel, u32 target_vp)
 EXPORT_SYMBOL_GPL(vmbus_send_modifychannel);
 
 /*
+ * hv_set_mem_host_visibility - Set host visibility for specified memory.
+ */
+int hv_set_mem_host_visibility(void *kbuffer, u32 size, u32 visibility)
+{
+	int i, pfn;
+	int pagecount = size >> HV_HYP_PAGE_SHIFT;
+	u64 *pfn_array;
+	int ret = 0;
+
+	if (!hv_isolation_type_snp())
+		return 0;
+
+	pfn_array = vzalloc(HV_HYP_PAGE_SIZE);
+	if (!pfn_array)
+		return -ENOMEM;
+
+	for (i = 0, pfn = 0; i < pagecount; i++) {
+		pfn_array[pfn] = virt_to_hvpfn(kbuffer + i * HV_HYP_PAGE_SIZE);
+		pfn++;
+
+		if (pfn == HV_MAX_MODIFY_GPA_REP_COUNT || i == pagecount - 1) {
+			ret |= hv_mark_gpa_visibility(pfn, pfn_array, visibility);
+			pfn = 0;
+		}
+	}
+
+	vfree(pfn_array);
+	return ret;
+}
+EXPORT_SYMBOL_GPL(hv_set_mem_host_visibility);
+
+/*
  * create_gpadl_header - Creates a gpadl for the specified buffer
  */
 static int create_gpadl_header(enum hv_gpadl_type type, void *kbuffer,
@@ -474,6 +506,12 @@ static int __vmbus_establish_gpadl(struct vmbus_channel *channel,
 				  &msginfo, visibility);
 	if (ret)
 		return ret;
+
+	ret = hv_set_mem_host_visibility(kbuffer, size, visibility);
+	if (ret) {
+		pr_warn("Failed to set host visibility.\n");
+		return ret;
+	}
 
 	init_completion(&msginfo->waitevent);
 	msginfo->waiting_channel = channel;
@@ -758,7 +796,9 @@ error_clean_msglist:
 error_free_info:
 	kfree(open_info);
 error_free_gpadl:
-	vmbus_teardown_gpadl(newchannel, newchannel->ringbuffer_gpadlhandle);
+	vmbus_teardown_gpadl(newchannel, newchannel->ringbuffer_gpadlhandle,
+			     page_address(newchannel->ringbuffer_page),
+			     newchannel->ringbuffer_pagecount << PAGE_SHIFT);
 	newchannel->ringbuffer_gpadlhandle = 0;
 error_clean_ring:
 	hv_ringbuffer_cleanup(&newchannel->outbound);
@@ -805,7 +845,8 @@ EXPORT_SYMBOL_GPL(vmbus_open);
 /*
  * vmbus_teardown_gpadl -Teardown the specified GPADL handle
  */
-int vmbus_teardown_gpadl(struct vmbus_channel *channel, u32 gpadl_handle)
+int vmbus_teardown_gpadl(struct vmbus_channel *channel, u32 gpadl_handle,
+			 void *kbuffer, u32 size)
 {
 	struct vmbus_channel_gpadl_teardown *msg;
 	struct vmbus_channel_msginfo *info;
@@ -858,6 +899,10 @@ post_msg_err:
 	spin_unlock_irqrestore(&vmbus_connection.channelmsg_lock, flags);
 
 	kfree(info);
+
+	if (hv_set_mem_host_visibility(kbuffer, size, VMBUS_PAGE_NOT_VISIBLE))
+		pr_warn("Fail to set mem host visibility.\n");
+
 	return ret;
 }
 EXPORT_SYMBOL_GPL(vmbus_teardown_gpadl);
@@ -934,7 +979,9 @@ static int vmbus_close_internal(struct vmbus_channel *channel)
 	/* Tear down the gpadl for the channel's ring buffer */
 	else if (channel->ringbuffer_gpadlhandle) {
 		ret = vmbus_teardown_gpadl(channel,
-					   channel->ringbuffer_gpadlhandle);
+					   channel->ringbuffer_gpadlhandle,
+					   page_address(channel->ringbuffer_page),
+					   channel->ringbuffer_pagecount << PAGE_SHIFT);
 		if (ret) {
 			pr_err("Close failed: teardown gpadl return %d\n", ret);
 			/*

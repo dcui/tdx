@@ -1187,7 +1187,8 @@ extern int vmbus_establish_gpadl(struct vmbus_channel *channel,
 				      u32 visibility);
 
 extern int vmbus_teardown_gpadl(struct vmbus_channel *channel,
-				     u32 gpadl_handle);
+				u32 gpadl_handle,
+				void *kbuffer, u32 size);
 
 void vmbus_reset_channel_cb(struct vmbus_channel *channel);
 

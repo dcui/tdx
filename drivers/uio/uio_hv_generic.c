@@ -181,13 +181,15 @@ static void
 hv_uio_cleanup(struct hv_device *dev, struct hv_uio_private_data *pdata)
 {
 	if (pdata->send_gpadl) {
-		vmbus_teardown_gpadl(dev->channel, pdata->send_gpadl);
+		vmbus_teardown_gpadl(dev->channel, pdata->send_gpadl,
+				     pdata->send_buf, SEND_BUFFER_SIZE);
 		pdata->send_gpadl = 0;
 		vfree(pdata->send_buf);
 	}
 
 	if (pdata->recv_gpadl) {
-		vmbus_teardown_gpadl(dev->channel, pdata->recv_gpadl);
+		vmbus_teardown_gpadl(dev->channel, pdata->recv_gpadl,
+				     pdata->recv_buf, RECV_BUFFER_SIZE);
 		pdata->recv_gpadl = 0;
 		vfree(pdata->recv_buf);
 	}

@@ -280,7 +280,9 @@ static void netvsc_teardown_recv_gpadl(struct hv_device *device,
 
 	if (net_device->recv_buf_gpadl_handle) {
 		ret = vmbus_teardown_gpadl(device->channel,
-					   net_device->recv_buf_gpadl_handle);
+					   net_device->recv_buf_gpadl_handle,
+					   net_device->recv_buf,
+					   net_device->recv_buf_size);
 
 		/* If we failed here, we might as well return and have a leak
 		 * rather than continue and a bugchk
@@ -302,7 +304,9 @@ static void netvsc_teardown_send_gpadl(struct hv_device *device,
 
 	if (net_device->send_buf_gpadl_handle) {
 		ret = vmbus_teardown_gpadl(device->channel,
-					   net_device->send_buf_gpadl_handle);
+					   net_device->send_buf_gpadl_handle,
+					   net_device->send_buf,
+					   net_device->send_buf_size);
 
 		/* If we failed here, we might as well return and have a leak
 		 * rather than continue and a bugchk
@@ -464,6 +468,7 @@ static int netvsc_init_buf(struct hv_device *device,
 		ret = -ENOMEM;
 		goto cleanup;
 	}
+	net_device->send_buf_size = buf_size;
 
 	/* Establish the gpadl handle for this buffer on this
 	 * channel.  Note: This call uses the vmbus connection rather
