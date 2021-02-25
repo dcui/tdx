@@ -312,7 +312,7 @@ int hv_set_mem_host_visibility(void *kbuffer, u32 size, u32 visibility)
 	u64 *pfn_array;
 	int ret = 0;
 
-	if (!hv_isolation_type_snp())
+	if (!hv_is_isolation_supported())
 		return 0;
 
 	pfn_array = vzalloc(HV_HYP_PAGE_SIZE);

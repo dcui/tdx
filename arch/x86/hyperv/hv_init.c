@@ -46,30 +46,10 @@ static int hv_cpu_init(unsigned int cpu)
 {
 	union hv_vp_assist_msr_contents msr = { 0 };
 	struct hv_vp_assist_page **hvp = &hv_vp_assist_page[smp_processor_id()];
-	void **input_arg;
-	struct page *pg;
 	u64 ghcb_gpa;
 	void *ghcb_va;
 	void **ghcb_base;
 	int ret;
-
-	/* hv_cpu_init() can be called with IRQs disabled from hv_resume() */
-	pg = alloc_pages(irqs_disabled() ? GFP_ATOMIC : GFP_KERNEL, hv_root_partition ? 1 : 0);
-	if (unlikely(!pg))
-		return -ENOMEM;
-
-	input_arg = (void **)this_cpu_ptr(hyperv_pcpu_input_arg);
-	*input_arg = page_address(pg);
-	if (hv_root_partition) {
-		void **output_arg;
-
-		output_arg = (void **)this_cpu_ptr(hyperv_pcpu_output_arg);
-		*output_arg = page_address(pg + 1);
-	}
-
-	hv_get_vp_index(msr_vp_index);
-
-	hv_vp_index[smp_processor_id()] = msr_vp_index;
 
 	ret = hv_common_cpu_init(cpu);
 	if (ret)
@@ -455,6 +435,9 @@ void __init hyperv_init(void)
 
 		ghcb_base = (void **)this_cpu_ptr(ms_hyperv.ghcb_base);
 		*ghcb_base = ghcb_va;
+
+		/* Hyper-V requires to write guest os id via ghcb in SNP IVM. */
+		hv_ghcb_msr_write(HV_X64_MSR_GUEST_OS_ID, guest_id);
 	}
 
 	rdmsrl(HV_X64_MSR_HYPERCALL, hypercall_msr.as_uint64);
@@ -542,6 +525,7 @@ void hyperv_cleanup(void)
 
 	/* Reset our OS id */
 	wrmsrl(HV_X64_MSR_GUEST_OS_ID, 0);
+	hv_ghcb_msr_write(HV_X64_MSR_GUEST_OS_ID, 0);
 
 	/*
 	 * Reset hypercall page reference before reset the page,
@@ -615,16 +599,3 @@ bool hv_is_hyperv_initialized(void)
 	return hypercall_msr.enable;
 }
 EXPORT_SYMBOL_GPL(hv_is_hyperv_initialized);
-
-enum hv_isolation_type hv_get_isolation_type(void)
-{
-	if (!(ms_hyperv.priv_high & HV_ISOLATION))
-		return HV_ISOLATION_TYPE_NONE;
-	return FIELD_GET(HV_ISOLATION_TYPE, ms_hyperv.isolation_config_b);
-}
-EXPORT_SYMBOL_GPL(hv_get_isolation_type);
-
-bool hv_is_isolation_supported(void)
-{
-	return hv_get_isolation_type() != HV_ISOLATION_TYPE_NONE;
-}
