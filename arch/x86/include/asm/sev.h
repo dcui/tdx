@@ -88,6 +88,7 @@ static __always_inline void sev_es_nmi_complete(void)
 extern int __init sev_es_efi_map_ghcbs(pgd_t *pgd);
 extern struct ghcb *sev_es_get_ghcb(struct ghcb_state *state);
 extern void sev_es_put_ghcb(struct ghcb_state *state);
+extern int vmgexit_page_state_change(struct ghcb *ghcb, void *data);
 
 #else
 static inline void sev_es_ist_enter(struct pt_regs *regs) { }
@@ -97,6 +98,7 @@ static inline void sev_es_nmi_complete(void) { }
 static inline int sev_es_efi_map_ghcbs(pgd_t *pgd) { return 0; }
 static inline struct ghcb *sev_es_get_ghcb(struct ghcb_state *state) { return NULL; }
 static inline void sev_es_put_ghcb(struct ghcb_state *state) { }
+static inline int vmgexit_page_state_change(struct ghcb *ghcb, void *data) { return 0; }
 #endif
 
 #endif

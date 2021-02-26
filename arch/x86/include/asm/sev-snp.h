@@ -90,6 +90,8 @@ void __init early_snp_set_memory_private(unsigned long vaddr, unsigned long padd
 		unsigned int npages);
 void __init early_snp_set_memory_shared(unsigned long vaddr, unsigned long paddr,
 		unsigned int npages);
+int snp_set_memory_shared(unsigned long vaddr, unsigned int npages);
+int snp_set_memory_private(unsigned long vaddr, unsigned int npages);
 
 #else	/* !CONFIG_AMD_MEM_ENCRYPT */
 
@@ -110,6 +112,8 @@ early_snp_set_memory_shared(unsigned long vaddr, unsigned long paddr, unsigned i
 {
 	return 0;
 }
+static inline int snp_set_memory_shared(unsigned long vaddr, unsigned int npages) { return 0; }
+static inline int snp_set_memory_private(unsigned long vaddr, unsigned int npages) { return 0; }
 
 #endif /* CONFIG_AMD_MEM_ENCRYPT */
 

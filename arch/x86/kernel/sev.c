@@ -830,6 +830,13 @@ static bool __init sev_es_setup_ghcb(void)
 	return true;
 }
 
+int vmgexit_page_state_change(struct ghcb *ghcb, void *data)
+{
+	ghcb_set_sw_scratch(ghcb, (u64)__pa(data));
+
+	return sev_es_ghcb_hv_call(ghcb, NULL, SVM_VMGEXIT_PAGE_STATE_CHANGE, 0, 0);
+}
+
 #ifdef CONFIG_HOTPLUG_CPU
 static void sev_es_ap_hlt_loop(void)
 {
