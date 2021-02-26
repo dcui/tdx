@@ -116,3 +116,29 @@ void sev_snp_set_page_shared(unsigned long paddr)
 {
 	sev_snp_set_page_private_shared(paddr, SNP_PAGE_STATE_SHARED);
 }
+
+void sev_snp_register_ghcb(unsigned long paddr)
+{
+	u64 pfn = paddr >> PAGE_SHIFT;
+	u64 old, val;
+
+	if (!sev_snp_enabled())
+		return;
+
+	/* save the old GHCB MSR */
+	old = sev_es_rd_ghcb_msr();
+
+	/* Issue VMGEXIT */
+	sev_es_wr_ghcb_msr(GHCB_REGISTER_GPA_REQ_VAL(pfn));
+	VMGEXIT();
+
+	val = sev_es_rd_ghcb_msr();
+
+	/* If the response GPA is not ours then abort the guest */
+	if ((GHCB_SEV_GHCB_RESP_CODE(val) != GHCB_REGISTER_GPA_RESP) ||
+	    (GHCB_REGISTER_GPA_RESP_VAL(val) != pfn))
+		sev_es_terminate(GHCB_SEV_ES_REASON_GENERAL_REQUEST);
+
+	/* Restore the GHCB MSR value */
+	sev_es_wr_ghcb_msr(old);
+}

@@ -56,6 +56,13 @@ struct __packed snp_page_state_change {
 	struct snp_page_state_entry entry[SNP_PAGE_STATE_CHANGE_MAX_ENTRY];
 };
 
+/* GHCB GPA register */
+#define GHCB_REGISTER_GPA_REQ	0x012UL
+#define		GHCB_REGISTER_GPA_REQ_VAL(v)		(GHCB_REGISTER_GPA_REQ | ((v) << 12))
+
+#define GHCB_REGISTER_GPA_RESP	0x013UL
+#define		GHCB_REGISTER_GPA_RESP_VAL(val)		((val) >> 12)
+
 #ifdef CONFIG_AMD_MEM_ENCRYPT
 static inline int __pvalidate(unsigned long vaddr, int rmp_psize, int validate,
 			      unsigned long *rflags)
@@ -73,12 +80,16 @@ static inline int __pvalidate(unsigned long vaddr, int rmp_psize, int validate,
 	return rc;
 }
 
+void sev_snp_register_ghcb(unsigned long paddr);
+
 #else	/* !CONFIG_AMD_MEM_ENCRYPT */
 
 static inline int __pvalidate(unsigned long vaddr, int psize, int validate, unsigned long *eflags)
 {
 	return 0;
 }
+
+static inline void sev_snp_register_ghcb(unsigned long paddr) { }
 
 #endif /* CONFIG_AMD_MEM_ENCRYPT */
 
