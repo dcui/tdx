@@ -63,6 +63,10 @@ struct __packed snp_page_state_change {
 #define GHCB_REGISTER_GPA_RESP	0x013UL
 #define		GHCB_REGISTER_GPA_RESP_VAL(val)		((val) >> 12)
 
+/* Macro to convert the x86 page level to the RMP level and vice versa */
+#define X86_RMP_PG_LEVEL(level)	(((level) == PG_LEVEL_4K) ? RMP_PG_SIZE_4K : RMP_PG_SIZE_2M)
+#define RMP_X86_PG_LEVEL(level)	(((level) == RMP_PG_SIZE_4K) ? PG_LEVEL_4K : PG_LEVEL_2M)
+
 #ifdef CONFIG_AMD_MEM_ENCRYPT
 static inline int __pvalidate(unsigned long vaddr, int rmp_psize, int validate,
 			      unsigned long *rflags)
@@ -82,6 +86,11 @@ static inline int __pvalidate(unsigned long vaddr, int rmp_psize, int validate,
 
 void sev_snp_register_ghcb(unsigned long paddr);
 
+void __init early_snp_set_memory_private(unsigned long vaddr, unsigned long paddr,
+		unsigned int npages);
+void __init early_snp_set_memory_shared(unsigned long vaddr, unsigned long paddr,
+		unsigned int npages);
+
 #else	/* !CONFIG_AMD_MEM_ENCRYPT */
 
 static inline int __pvalidate(unsigned long vaddr, int psize, int validate, unsigned long *eflags)
@@ -90,6 +99,17 @@ static inline int __pvalidate(unsigned long vaddr, int psize, int validate, unsi
 }
 
 static inline void sev_snp_register_ghcb(unsigned long paddr) { }
+
+static inline void __init
+early_snp_set_memory_private(unsigned long vaddr, unsigned long paddr, unsigned int npages)
+{
+	return 0;
+}
+static inline void __init
+early_snp_set_memory_shared(unsigned long vaddr, unsigned long paddr, unsigned int npages)
+{
+	return 0;
+}
 
 #endif /* CONFIG_AMD_MEM_ENCRYPT */
 
