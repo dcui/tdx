@@ -87,10 +87,6 @@ struct sev_es_runtime_data {
 	bool ghcb_registered;
 };
 
-struct ghcb_state {
-	struct ghcb *ghcb;
-};
-
 static DEFINE_PER_CPU(struct sev_es_runtime_data*, runtime_data);
 DEFINE_STATIC_KEY_FALSE(sev_es_enable_key);
 
@@ -221,6 +217,24 @@ static noinstr struct ghcb *__sev_get_ghcb(struct ghcb_state *state)
 	}
 
 	return ghcb;
+}
+
+void sev_es_put_ghcb(struct ghcb_state *state)
+{
+	struct sev_es_runtime_data *data;
+	struct ghcb *ghcb;
+
+	data = this_cpu_read(runtime_data);
+	ghcb = &data->ghcb_page;
+
+	if (state->ghcb) {
+		/* Restore GHCB from Backup */
+		*ghcb = *state->ghcb;
+		data->backup_ghcb_active = false;
+		state->ghcb = NULL;
+	} else {
+		data->ghcb_active = false;
+	}
 }
 
 /* Needed in vc_early_forward_exception */

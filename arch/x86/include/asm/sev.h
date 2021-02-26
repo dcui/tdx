@@ -60,6 +60,10 @@ extern void vc_no_ghcb(void);
 extern void vc_boot_ghcb(void);
 extern bool handle_vc_boot_ghcb(struct pt_regs *regs);
 
+struct ghcb_state {
+	struct ghcb *ghcb;
+};
+
 #ifdef CONFIG_AMD_MEM_ENCRYPT
 extern struct static_key_false sev_es_enable_key;
 extern void __sev_es_ist_enter(struct pt_regs *regs);
@@ -82,12 +86,17 @@ static __always_inline void sev_es_nmi_complete(void)
 		__sev_es_nmi_complete();
 }
 extern int __init sev_es_efi_map_ghcbs(pgd_t *pgd);
+extern struct ghcb *sev_es_get_ghcb(struct ghcb_state *state);
+extern void sev_es_put_ghcb(struct ghcb_state *state);
+
 #else
 static inline void sev_es_ist_enter(struct pt_regs *regs) { }
 static inline void sev_es_ist_exit(void) { }
 static inline int sev_es_setup_ap_jump_table(struct real_mode_header *rmh) { return 0; }
 static inline void sev_es_nmi_complete(void) { }
 static inline int sev_es_efi_map_ghcbs(pgd_t *pgd) { return 0; }
+static inline struct ghcb *sev_es_get_ghcb(struct ghcb_state *state) { return NULL; }
+static inline void sev_es_put_ghcb(struct ghcb_state *state) { }
 #endif
 
 #endif
