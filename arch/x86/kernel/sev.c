@@ -30,6 +30,7 @@
 #include <asm/svm.h>
 #include <asm/smp.h>
 #include <asm/cpu.h>
+#include <asm/sev-snp.h>
 
 #define DR7_RESET_VALUE        0x400
 
@@ -77,6 +78,13 @@ struct sev_es_runtime_data {
 	 * is currently unsupported in SEV-ES guests.
 	 */
 	unsigned long dr7;
+
+	/*
+	 * SEV-SNP requires that the GHCB must be registered before using it.
+	 * The flag below will indicate whether the GHCB is registered, if its
+	 * not registered then sev_es_get_ghcb() will perform the registration.
+	 */
+	bool ghcb_registered;
 };
 
 struct ghcb_state {
@@ -204,6 +212,12 @@ static noinstr struct ghcb *__sev_get_ghcb(struct ghcb_state *state)
 	} else {
 		state->ghcb = NULL;
 		data->ghcb_active = true;
+	}
+
+	/* SEV-SNP guest requires that GHCB must be registered before using it. */
+	if (sev_snp_active() && !data->ghcb_registered) {
+		sev_snp_register_ghcb(__pa(ghcb));
+		data->ghcb_registered = true;
 	}
 
 	return ghcb;
@@ -485,6 +499,28 @@ static enum es_result vc_slow_virt_to_phys(struct ghcb *ghcb, struct es_em_ctxt 
 /* Include code shared with pre-decompression boot stage */
 #include "sev-shared.c"
 
+void sev_snp_register_ghcb(unsigned long paddr)
+{
+	u64 pfn = paddr >> PAGE_SHIFT;
+	u64 old, val;
+
+	/* save the old GHCB MSR */
+	old = sev_es_rd_ghcb_msr();
+
+	/* Issue VMGEXIT */
+	sev_es_wr_ghcb_msr(GHCB_REGISTER_GPA_REQ_VAL(pfn));
+	VMGEXIT();
+
+	val = sev_es_rd_ghcb_msr();
+
+	/* If the response GPA is not ours then abort the guest */
+	if ((GHCB_SEV_GHCB_RESP_CODE(val) != GHCB_REGISTER_GPA_RESP) ||
+	    (GHCB_REGISTER_GPA_RESP_VAL(val) != pfn))
+		sev_es_terminate(GHCB_SEV_ES_REASON_GENERAL_REQUEST);
+
+	/* Restore the GHCB MSR value */
+	sev_es_wr_ghcb_msr(old);
+}
 
 static noinstr void __sev_put_ghcb(struct ghcb_state *state)
 {
@@ -668,6 +704,10 @@ static bool __init sev_es_setup_ghcb(void)
 	/* Alright - Make the boot-ghcb public */
 	boot_ghcb = &boot_ghcb_page;
 
+	/* SEV-SNP guest requires that GHCB GPA must be registered */
+	if (sev_snp_active())
+		sev_snp_register_ghcb(__pa(&boot_ghcb_page));
+
 	return true;
 }
 
@@ -757,6 +797,7 @@ static void __init init_ghcb(int cpu)
 
 	data->ghcb_active = false;
 	data->backup_ghcb_active = false;
+	data->ghcb_registered = false;
 }
 
 void __init sev_es_init_vc_handling(void)
