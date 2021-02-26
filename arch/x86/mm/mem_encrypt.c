@@ -390,6 +390,11 @@ bool noinstr sev_es_active(void)
 	return sev_status & MSR_AMD64_SEV_ES_ENABLED;
 }
 
+bool sev_snp_active(void)
+{
+	return sev_status & MSR_AMD64_SEV_SNP_ENABLED;
+}
+
 /* Override for DMA direct allocation check - ARCH_HAS_FORCE_DMA_UNENCRYPTED */
 bool force_dma_unencrypted(struct device *dev)
 {
@@ -461,6 +466,10 @@ static void print_mem_encrypt_feature_info(void)
 	/* Encrypted Register State */
 	if (sev_es_active())
 		pr_cont(" SEV-ES");
+
+	/* Secure Nested Paging */
+	if (sev_snp_active())
+		pr_cont(" SEV-SNP");
 
 	pr_cont("\n");
 }
