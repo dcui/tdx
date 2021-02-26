@@ -22,6 +22,40 @@
 #define RMP_PG_SIZE_2M			1
 #define RMP_PG_SIZE_4K			0
 
+/* Page State Change MSR Protocol */
+#define GHCB_SNP_PAGE_STATE_CHANGE_REQ	0x0014
+#define		GHCB_SNP_PAGE_STATE_REQ_GFN(v, o)	(GHCB_SNP_PAGE_STATE_CHANGE_REQ | \
+							 ((unsigned long)((o) & 0xf) << 52) | \
+							 (((v) << 12) & 0xffffffffffffff))
+#define	SNP_PAGE_STATE_PRIVATE		1
+#define	SNP_PAGE_STATE_SHARED		2
+#define	SNP_PAGE_STATE_PSMASH		3
+#define	SNP_PAGE_STATE_UNSMASH		4
+
+#define GHCB_SNP_PAGE_STATE_CHANGE_RESP	0x0015
+#define		GHCB_SNP_PAGE_STATE_RESP_VAL(val)	((val) >> 32)
+
+/* Page State Change NAE event */
+#define SNP_PAGE_STATE_CHANGE_MAX_ENTRY		253
+struct __packed snp_page_state_header {
+	uint16_t cur_entry;
+	uint16_t end_entry;
+	uint32_t reserved;
+};
+
+struct __packed snp_page_state_entry {
+	uint64_t cur_page:12;
+	uint64_t gfn:40;
+	uint64_t operation:4;
+	uint64_t pagesize:1;
+	uint64_t reserved:7;
+};
+
+struct __packed snp_page_state_change {
+	struct snp_page_state_header header;
+	struct snp_page_state_entry entry[SNP_PAGE_STATE_CHANGE_MAX_ENTRY];
+};
+
 #ifdef CONFIG_AMD_MEM_ENCRYPT
 static inline int __pvalidate(unsigned long vaddr, int rmp_psize, int validate,
 			      unsigned long *rflags)
