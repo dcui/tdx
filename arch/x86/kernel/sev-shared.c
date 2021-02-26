@@ -14,9 +14,6 @@
 #define has_cpuflag(f)	boot_cpu_has(f)
 #endif
 
-/* Provides sev_es_terminate() */
-#include "sev-common-shared.c"
-
 static bool __init sev_es_check_cpu_features(void)
 {
 	if (!has_cpuflag(X86_FEATURE_RDRAND)) {

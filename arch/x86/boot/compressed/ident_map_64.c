@@ -37,6 +37,8 @@
 #include <asm/setup.h>	/* For COMMAND_LINE_SIZE */
 #undef _SETUP
 
+#include "sev-snp.h"
+
 extern unsigned long get_cmd_line_ptr(void);
 
 /* Used by PAGE_KERN* macros: */
@@ -278,11 +280,27 @@ static int set_clr_page_flags(struct x86_mapping_info *info,
 	if ((set | clr) & _PAGE_ENC)
 		clflush_page(address);
 
+	/*
+	 * If the encryption attribute is being cleared, then change the page state to
+	 * shared in the RMP entry. Change of the page state must be done before the
+	 * PTE updates.
+	 */
+	if (clr & _PAGE_ENC)
+		sev_snp_set_page_shared(pte_pfn(*ptep) << PAGE_SHIFT);
+
 	/* Update PTE */
 	pte = *ptep;
 	pte = pte_set_flags(pte, set);
 	pte = pte_clear_flags(pte, clr);
 	set_pte(ptep, pte);
+
+	/*
+	 * If the encryption attribute is being set, then change the page state to
+	 * private in the RMP entry. The page state must be done after the PTE
+	 * is updated.
+	 */
+	if (set & _PAGE_ENC)
+		sev_snp_set_page_private(pte_pfn(*ptep) << PAGE_SHIFT);
 
 	/* Flush TLB after changing encryption attribute */
 	write_cr3(top_level_pgt);
