@@ -83,6 +83,19 @@ extern int hv_init_channel_ivm(struct vmbus_channel *channel);
 
 extern void hv_free_channel_ivm(struct vmbus_channel *channel);
 
+extern int vmbus_sendpacket_pagebuffer_bounce(struct vmbus_channel *channel,
+	struct vmbus_channel_packet_page_buffer *desc, u32 desc_size,
+	struct kvec *bufferlist, u8 io_type, struct hv_bounce_pkt **bounce_pkt,
+	u64 requestid);
+
+extern int vmbus_sendpacket_mpb_desc_bounce(struct vmbus_channel *channel,
+	struct vmbus_packet_mpb_array *desc, u32 desc_size,
+	struct kvec *bufferlist, u8 io_type, struct hv_bounce_pkt **bounce_pkt,
+	u64 requestid);
+
+extern void hv_pkt_bounce(struct vmbus_channel *channel,
+			  struct hv_bounce_pkt *bounce_pkt);
+
 /* struct hv_monitor_page Layout */
 /* ------------------------------------------------------ */
 /* | 0   | TriggerState (4 bytes) | Rsvd1 (4 bytes)     | */
