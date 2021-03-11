@@ -54,26 +54,8 @@ static unsigned long insn_get_seg_base(struct pt_regs *regs, int seg_reg_idx)
 	return 0UL;
 }
 
-static inline u64 sev_es_rd_ghcb_msr(void)
-{
-	unsigned long low, high;
-
-	asm volatile("rdmsr" : "=a" (low), "=d" (high) :
-			"c" (MSR_AMD64_SEV_ES_GHCB));
-
-	return ((high << 32) | low);
-}
-
-static inline void sev_es_wr_ghcb_msr(u64 val)
-{
-	u32 low, high;
-
-	low  = val & 0xffffffffUL;
-	high = val >> 32;
-
-	asm volatile("wrmsr" : : "c" (MSR_AMD64_SEV_ES_GHCB),
-			"a"(low), "d" (high) : "memory");
-}
+/* Provides sev_es_{wr,rd}_ghcb_msr() */
+#include "sev-common.c"
 
 static enum es_result vc_decode_insn(struct es_em_ctxt *ctxt)
 {
