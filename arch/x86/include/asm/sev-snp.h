@@ -84,6 +84,33 @@ static inline int __pvalidate(unsigned long vaddr, int rmp_psize, int validate,
 	return rc;
 }
 
+void sev_snp_issue_pvalidate(unsigned long vaddr, unsigned int npages, bool validate);
+
+union sev_rmp_adjust
+{
+    u64 as_uint64;
+    struct
+    {
+        u64 target_vmpl : 8;
+        u64 enable_read : 1;
+        u64 enable_write : 1;
+        u64 enable_user_execute : 1;
+        u64 enable_kernel_execute : 1;
+        u64 reserved1 : 4;
+        u64 vmsa : 1;
+    };
+};
+
+#define RMPADJUST(addr, size, flags, ret) \
+	asm volatile ("movq %1, %%rax\n\t" \
+		      "mov %2, %%ecx\n\t" \
+		      "movq %3, %%rdx\n\t" \
+		      ".byte 0xf3, 0x0f, 0x01, 0xfe\n\t" \
+		      "movq %%rax, %0" \
+			: "=r" (ret) \
+			: "r" (addr), "r" (size), "r" (flags) \
+			: "rax", "rcx", "rdx")
+
 void sev_snp_register_ghcb(unsigned long paddr);
 
 void __init early_snp_set_memory_private(unsigned long vaddr, unsigned long paddr,

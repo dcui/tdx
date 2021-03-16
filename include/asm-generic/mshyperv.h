@@ -49,6 +49,7 @@ struct ms_hyperv_info {
 	};
 	void  __percpu **ghcb_base;
 	u64 shared_gpa_boundary;
+	u8 vtl;
 };
 extern struct ms_hyperv_info ms_hyperv;
 

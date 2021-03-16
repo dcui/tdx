@@ -144,7 +144,7 @@ static void sev_snp_pages_state_change(unsigned long paddr, int op)
 	sev_es_wr_ghcb_msr(old);
 }
 
-static void sev_snp_issue_pvalidate(unsigned long paddr, bool validate)
+static void sev_snp_issue_pvalidate_page(unsigned long paddr, bool validate)
 {
 	unsigned long eflags;
 	int rc;
@@ -176,7 +176,7 @@ static void sev_snp_set_page_private_shared(unsigned long paddr, int op)
 	 * making the page state change in the RMP table.
 	 */
 	if (op == SNP_PAGE_STATE_SHARED)
-		sev_snp_issue_pvalidate(paddr, false);
+		sev_snp_issue_pvalidate_page(paddr, false);
 
 	/* Request the page state change in the RMP table. */
 	sev_snp_pages_state_change(paddr, op);
@@ -186,7 +186,7 @@ static void sev_snp_set_page_private_shared(unsigned long paddr, int op)
 	 * memory range so that it is consistent with the RMP entry.
 	 */
 	if (op == SNP_PAGE_STATE_PRIVATE)
-		sev_snp_issue_pvalidate(paddr, true);
+		sev_snp_issue_pvalidate_page(paddr, true);
 }
 
 void sev_snp_set_page_private(unsigned long paddr)

@@ -66,8 +66,13 @@ static u32 hv_apic_read(u32 reg)
 		rdmsr(HV_X64_MSR_TPR, reg_val, hi);
 		(void)hi;
 		return reg_val;
-
+	case APIC_ID:
+		if (hv_isolation_type_snp())
+			return smp_processor_id();
+		fallthrough;
 	default:
+		if (hv_isolation_type_snp())
+			return 0;
 		return native_apic_mem_read(reg);
 	}
 }
@@ -82,7 +87,8 @@ static void hv_apic_write(u32 reg, u32 val)
 		wrmsr(HV_X64_MSR_TPR, val, 0);
 		break;
 	default:
-		native_apic_mem_write(reg, val);
+		if (!hv_isolation_type_snp())
+			native_apic_mem_write(reg, val);
 	}
 }
 
@@ -341,13 +347,20 @@ void __init hv_apic_init(void)
 		 * exception is hv_apic_eoi_write, because it benefits from
 		 * lazy EOI when available, but the same accessor works for
 		 * both xapic and x2apic because the field layout is the same.
+		 *
+		 * For SNP guests, we let the #HV handler process EOI.
+		 * We also override the apic accessors since the hypervisor
+		 * does not support architectural x2apic MSRs.
 		 */
-		apic_set_eoi_write(hv_apic_eoi_write);
-		if (!x2apic_enabled()) {
+		if (!hv_isolation_type_snp())
+			apic_set_eoi_write(hv_apic_eoi_write);
+		if (!x2apic_enabled() || hv_isolation_type_snp()) {
 			apic->read      = hv_apic_read;
 			apic->write     = hv_apic_write;
 			apic->icr_write = hv_apic_icr_write;
 			apic->icr_read  = hv_apic_icr_read;
 		}
+		if (hv_isolation_type_snp())
+			apic->wakeup_secondary_cpu = hv_snp_boot_ap;
 	}
 }

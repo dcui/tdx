@@ -303,7 +303,26 @@ struct vmcb_save_area {
 	u64 sw_exit_info_1;
 	u64 sw_exit_info_2;
 	u64 sw_scratch;
-	u8 reserved_11[56];
+	union {
+		u64 sev_features;
+		struct {
+			u64 sev_feature_snp			: 1;
+			u64 sev_feature_vtom			: 1;
+			u64 sev_feature_reflectvc		: 1;
+			u64 sev_feature_restrict_injection	: 1;
+			u64 sev_feature_alternate_injection	: 1;
+			u64 sev_feature_full_debug		: 1;
+			u64 sev_feature_reserved1		: 1;
+			u64 sev_feature_snpbtb_isolation	: 1;
+			u64 sev_feature_resrved2		: 56;
+		};
+	};
+	u64 vintr_ctrl;
+	u64 guest_error_code;
+	u64 virtual_tom;
+	u64 tlb_id;
+	u64 pcpu_id;
+	u64 event_inject;
 	u64 xcr0;
 	u8 valid_bitmap[16];
 	u64 x87_state_gpa;

@@ -724,7 +724,7 @@ void sev_snp_register_ghcb(unsigned long paddr)
 	sev_es_wr_ghcb_msr(old);
 }
 
-static void sev_snp_issue_pvalidate(unsigned long vaddr, unsigned int npages, bool validate)
+void sev_snp_issue_pvalidate(unsigned long vaddr, unsigned int npages, bool validate)
 {
 	unsigned long eflags, vaddr_end, vaddr_next;
 	int rc;
