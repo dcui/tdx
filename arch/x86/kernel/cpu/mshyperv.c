@@ -503,8 +503,12 @@ static void __init ms_hyperv_init_platform(void)
 	if (ms_hyperv.priv_high & HV_ISOLATION) {
 		ms_hyperv.isolation_config_a = cpuid_eax(HYPERV_CPUID_ISOLATION_CONFIG);
 		ms_hyperv.isolation_config_b = cpuid_ebx(HYPERV_CPUID_ISOLATION_CONFIG);
-		ms_hyperv.shared_gpa_boundary =
-			(u64)1 << ms_hyperv.shared_gpa_boundary_bits;
+
+		if (sev_snp_active()) {
+			ms_hyperv.isolation_config_b |= HV_ISOLATION_TYPE_SNP;
+			BUG_ON(ms_hyperv.shared_gpa_boundary_active);
+			BUG_ON(ms_hyperv.shared_gpa_boundary_bits != 0);
+		}
 
 		pr_info("Hyper-V: Isolation Config: Group A 0x%x, Group B 0x%x\n",
 			ms_hyperv.isolation_config_a, ms_hyperv.isolation_config_b);
