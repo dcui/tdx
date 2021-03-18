@@ -641,6 +641,111 @@ void __init early_snp_set_memory_shared(unsigned long vaddr, unsigned long paddr
 	early_snp_set_page_state(paddr, npages, SNP_PAGE_STATE_SHARED);
 }
 
+static int snp_page_state_vmgexit(struct ghcb *ghcb, struct snp_page_state_change *data)
+{
+	struct snp_page_state_header *hdr;
+	int ret = 0;
+
+	hdr = &data->header;
+
+	/*
+	 * The hypervisor can return before processing all the entries, the loop below retries
+	 * until all the entries are processed.
+	 */
+	while (hdr->cur_entry <= hdr->end_entry) {
+		ghcb_set_sw_scratch(ghcb, (u64)__pa(data));
+		ret = vmgexit_page_state_change(ghcb, data);
+		/* Page State Change VMGEXIT can pass error code through exit_info_2. */
+		if (ret || ghcb->save.sw_exit_info_2)
+			break;
+	}
+
+	return ret;
+}
+
+static void snp_set_page_state(unsigned long paddr, unsigned int npages, int op)
+{
+	unsigned long paddr_end, paddr_next;
+	struct snp_page_state_change *data;
+	struct snp_page_state_header *hdr;
+	struct snp_page_state_entry *e;
+	struct ghcb_state state;
+	struct ghcb *ghcb;
+	int ret, idx;
+
+	paddr = paddr & PAGE_MASK;
+	paddr_end = paddr + (npages << PAGE_SHIFT);
+
+	ghcb = __sev_get_ghcb(&state);
+
+	data = (struct snp_page_state_change *)ghcb->shared_buffer;
+	hdr = &data->header;
+	e = &(data->entry[0]);
+	memset(data, 0, sizeof (*data));
+
+	for (idx = 0; paddr < paddr_end; paddr = paddr_next) {
+		int level = PG_LEVEL_4K;
+
+		/* If we cannot fit more request then issue VMGEXIT before going further.  */
+		if (hdr->end_entry == (SNP_PAGE_STATE_CHANGE_MAX_ENTRY - 1)) {
+			ret = snp_page_state_vmgexit(ghcb, data);
+			if (ret)
+				goto e_fail;
+
+			idx = 0;
+			memset(data, 0, sizeof (*data));
+			e = &(data->entry[0]);
+		}
+
+		hdr->end_entry = idx;
+		e->gfn = paddr >> PAGE_SHIFT;
+		e->operation = op;
+		e->pagesize = X86_RMP_PG_LEVEL(level);
+		e++;
+		idx++;
+		paddr_next = paddr + page_level_size(level);
+	}
+
+	/*
+	 * We can exit the above loop before issuing the VMGEXIT, if we exited before calling the
+	 * the VMGEXIT, then issue the VMGEXIT now.
+	 */
+	if (idx)
+		ret = snp_page_state_vmgexit(ghcb, data);
+
+	sev_es_put_ghcb(&state);
+	return;
+
+e_fail:
+	/* Dump stack for the debugging purpose */
+	dump_stack();
+
+	/* Ask to terminate the guest */
+	sev_es_terminate(GHCB_SEV_ES_REASON_GENERAL_REQUEST);
+}
+
+int snp_set_memory_shared(unsigned long vaddr, unsigned int npages)
+{
+	/* Invalidate the memory before changing the page state in the RMP table. */
+	sev_snp_issue_pvalidate(vaddr, npages, false);
+
+	/* Change the page state in the RMP table. */
+	snp_set_page_state(__pa(vaddr), npages, SNP_PAGE_STATE_SHARED);
+
+	return 0;
+}
+
+int snp_set_memory_private(unsigned long vaddr, unsigned int npages)
+{
+	/* Change the page state in the RMP table. */
+	snp_set_page_state(__pa(vaddr), npages, SNP_PAGE_STATE_PRIVATE);
+
+	/* Validate the memory after the memory is made private in the RMP table. */
+	sev_snp_issue_pvalidate(vaddr, npages, true);
+
+	return 0;
+}
+
 static noinstr void __sev_put_ghcb(struct ghcb_state *state)
 {
 	struct sev_es_runtime_data *data;
@@ -787,6 +892,23 @@ static enum es_result vc_handle_msr(struct ghcb *ghcb, struct es_em_ctxt *ctxt)
 
 	/* Is it a WRMSR? */
 	exit_info_1 = (ctxt->insn.opcode.bytes[1] == 0x30) ? 1 : 0;
+
+	if (sev_snp_active()) {
+		/*
+		 * Handle security-sensitive MSRs here.
+		 * TODO: incomplete list.
+		 */
+		switch (regs->cx) {
+		case MSR_AMD64_OSVW_ID_LENGTH:
+		case MSR_K8_TSEG_ADDR:
+		case MSR_F10H_DECFG:
+			if (!exit_info_1) {
+				regs->dx = 0;
+				regs->ax = 0;
+			}
+			return ES_OK;
+		}
+	}
 
 	ghcb_set_rcx(ghcb, regs->cx);
 	if (exit_info_1) {

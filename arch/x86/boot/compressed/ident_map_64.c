@@ -165,6 +165,9 @@ void initialize_identity_maps(void *rmode)
 	cmdline = get_cmd_line_ptr();
 	add_identity_map(cmdline, cmdline + COMMAND_LINE_SIZE);
 
+	/* Map pages at 8MB for SEV-SNP special pages (e.g., cpuid, secrets) */
+	add_identity_map((unsigned long)0x800000, (unsigned long)0xa00000);
+
 	/* Load the new page-table. */
 	sev_verify_cbit(top_level_pgt);
 	write_cr3(top_level_pgt);
