@@ -93,6 +93,8 @@ void __init early_snp_set_memory_shared(unsigned long vaddr, unsigned long paddr
 int snp_set_memory_shared(unsigned long vaddr, unsigned int npages);
 int snp_set_memory_private(unsigned long vaddr, unsigned int npages);
 
+void sev_snp_setup_hv_doorbell_page(struct ghcb *ghcb);
+
 #else	/* !CONFIG_AMD_MEM_ENCRYPT */
 
 static inline int __pvalidate(unsigned long vaddr, int psize, int validate, unsigned long *eflags)
@@ -114,6 +116,8 @@ early_snp_set_memory_shared(unsigned long vaddr, unsigned long paddr, unsigned i
 }
 static inline int snp_set_memory_shared(unsigned long vaddr, unsigned int npages) { return 0; }
 static inline int snp_set_memory_private(unsigned long vaddr, unsigned int npages) { return 0; }
+
+static inline void sev_snp_setup_hv_doorbell_page(struct ghcb *ghcb) { return; }
 
 #endif /* CONFIG_AMD_MEM_ENCRYPT */
 

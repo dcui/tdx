@@ -431,6 +431,26 @@ bool sev_snp_active(void)
 	return sev_status & MSR_AMD64_SEV_SNP_ENABLED;
 }
 
+bool noinstr sev_vtom_enabled(void)
+{
+	return sev_status & MSR_AMD64_SEV_VTOM_ENABLED;
+}
+
+bool noinstr sev_reflectvc_enabled(void)
+{
+	return sev_status & MSR_AMD64_SEV_REFLECTVC_ENABLED;
+}
+
+bool noinstr sev_restricted_injection_enabled(void)
+{
+	return sev_status & MSR_AMD64_SEV_RESTRICTED_INJECTION_ENABLED;
+}
+
+bool noinstr sev_alternate_injection_enabled(void)
+{
+	return sev_status & MSR_AMD64_SEV_ALTERNATE_INJECTION_ENABLED;
+}
+
 /* Override for DMA direct allocation check - ARCH_HAS_FORCE_DMA_UNENCRYPTED */
 bool force_dma_unencrypted(struct device *dev)
 {

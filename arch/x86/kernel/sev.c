@@ -18,6 +18,7 @@
 #include <linux/memblock.h>
 #include <linux/kernel.h>
 #include <linux/mm.h>
+#include <linux/memblock.h>
 
 #include <asm/cpu_entry_area.h>
 #include <asm/stacktrace.h>
@@ -31,6 +32,10 @@
 #include <asm/smp.h>
 #include <asm/cpu.h>
 #include <asm/sev-snp.h>
+#include <asm/smp.h>
+#include <asm/cpu.h>
+#include <asm/apic.h>
+#include <asm/traps.h>
 
 #define DR7_RESET_VALUE        0x400
 
@@ -89,6 +94,131 @@ struct sev_es_runtime_data {
 
 static DEFINE_PER_CPU(struct sev_es_runtime_data*, runtime_data);
 DEFINE_STATIC_KEY_FALSE(sev_es_enable_key);
+
+struct sev_hv_doorbell_page {
+	union {
+		u16 pending_events;
+		struct {
+			u8 vector;
+			u8 nmi : 1;
+			u8 mc : 1;
+			u8 reserved1 : 5;
+			u8 no_further_signal : 1;
+		};
+	};
+	u8 no_eoi_required;
+	u8 reserved2[61];
+	u8 padding[4032];
+};
+
+struct sev_snp_runtime_data {
+	struct sev_hv_doorbell_page hv_doorbell_page;
+};
+
+static DEFINE_PER_CPU(struct sev_snp_runtime_data*, snp_runtime_data);
+
+struct sev_hv_doorbell_page *sev_snp_current_doorbell_page(void)
+{
+	return &this_cpu_read(snp_runtime_data)->hv_doorbell_page;
+}
+
+static void hv_doorbell_apic_eoi_write(u32 reg, u32 val)
+{
+	struct sev_hv_doorbell_page *hv_doorbell_page = sev_snp_current_doorbell_page();;
+
+	if (xchg(&hv_doorbell_page->no_eoi_required, 0) & 0x1)
+		return;
+
+	BUG_ON(reg != APIC_EOI);
+	apic->write(reg, val);
+}
+
+static DEFINE_PER_CPU(u8, hv_pending);
+
+static void do_exc_hv(struct pt_regs *regs)
+{
+	struct sev_hv_doorbell_page *hvp = sev_snp_current_doorbell_page();
+	u8 vector;
+
+	BUG_ON((native_save_fl() & X86_EFLAGS_IF) == 0);
+
+	while (this_cpu_read(hv_pending)) {
+		asm volatile("cli": : :"memory");
+		this_cpu_write(hv_pending, 0);
+		vector = xchg(&hvp->vector, 0);
+
+		switch (vector) {
+#if IS_ENABLED(CONFIG_HYPERV)
+		case HYPERV_STIMER0_VECTOR:
+			sysvec_hyperv_stimer0(regs);
+			break;
+		case HYPERVISOR_CALLBACK_VECTOR:
+			sysvec_hyperv_callback(regs);
+			break;
+#endif
+#ifdef CONFIG_SMP
+		case RESCHEDULE_VECTOR:
+			sysvec_reschedule_ipi(regs);
+			break;
+		case IRQ_MOVE_CLEANUP_VECTOR:
+			sysvec_irq_move_cleanup(regs);
+			break;
+		case REBOOT_VECTOR:
+			sysvec_reboot(regs);
+			break;
+		case CALL_FUNCTION_SINGLE_VECTOR:
+			sysvec_call_function_single(regs);
+			break;
+		case CALL_FUNCTION_VECTOR:
+			sysvec_call_function(regs);
+			break;
+#endif
+		case 0x0:
+			break;
+		default:
+			panic("Unexpected vector %d\n", vector);
+			unreachable();
+		}
+
+		asm volatile("sti": : :"memory");
+	}
+}
+
+void check_hv_pending(struct pt_regs *regs)
+{
+	if (!sev_snp_active())
+		return;
+
+	if (regs) {
+		if ((regs->flags & X86_EFLAGS_IF) == 0)
+			return;
+
+		asm volatile("sti": : :"memory");
+
+		if (!this_cpu_read(hv_pending))
+			return;
+
+		do_exc_hv(regs);
+	} else {
+		/* Reached from STI/POPF */
+		if (this_cpu_read(hv_pending))
+			asm volatile("int %0" :: "i" (X86_TRAP_HV));
+	}
+}
+
+DEFINE_IDTENTRY_RAW(exc_hv)
+{
+	struct sev_hv_doorbell_page *hvp = sev_snp_current_doorbell_page();
+
+	this_cpu_write(hv_pending, 1);
+
+	/* Clear the no_further_signal bit */
+	hvp->pending_events &= 0x7fff;
+
+	/* TODO: handle NMI and MC? */
+
+	check_hv_pending(regs);
+}
 
 /* Needed in vc_early_forward_exception */
 void do_early_exception(struct pt_regs *regs, int trapnr);
@@ -164,6 +294,43 @@ void noinstr __sev_es_ist_exit(void)
 	this_cpu_write(cpu_tss_rw.x86_tss.ist[IST_INDEX_VC], *(unsigned long *)ist);
 }
 
+
+void sev_es_put_ghcb(struct ghcb_state *state)
+{
+	struct sev_es_runtime_data *data;
+	struct ghcb *ghcb;
+
+	data = this_cpu_read(runtime_data);
+	ghcb = &data->ghcb_page;
+
+	if (state->ghcb) {
+		/* Restore GHCB from Backup */
+		*ghcb = *state->ghcb;
+		data->backup_ghcb_active = false;
+		state->ghcb = NULL;
+	} else {
+		data->ghcb_active = false;
+	}
+}
+
+/* Needed in vc_early_forward_exception */
+void do_early_exception(struct pt_regs *regs, int trapnr);
+
+static inline u64 sev_es_rd_ghcb_msr(void)
+{
+	return __rdmsr(MSR_AMD64_SEV_ES_GHCB);
+}
+
+static __always_inline void sev_es_wr_ghcb_msr(u64 val)
+{
+	u32 low, high;
+
+	low  = (u32)(val);
+	high = (u32)(val >> 32);
+
+	native_wrmsr(MSR_AMD64_SEV_ES_GHCB, low, high);
+}
+
 /*
  * Nothing shall interrupt this code path while holding the per-CPU
  * GHCB. The backup GHCB is only for NMIs interrupting this path.
@@ -211,48 +378,51 @@ static noinstr struct ghcb *__sev_get_ghcb(struct ghcb_state *state)
 	}
 
 	/* SEV-SNP guest requires that GHCB must be registered before using it. */
-	if (sev_snp_active() && !data->ghcb_registered) {
-		sev_snp_register_ghcb(__pa(ghcb));
+	if (!data->ghcb_registered) {
+		if (sev_snp_active()) {
+			sev_snp_register_ghcb(__pa(ghcb));
+			sev_snp_setup_hv_doorbell_page(ghcb);
+		} else
+			sev_es_wr_ghcb_msr(__pa(ghcb));
 		data->ghcb_registered = true;
 	}
 
 	return ghcb;
 }
 
-void sev_es_put_ghcb(struct ghcb_state *state)
+void __init sev_snp_init_hv_handling(void)
 {
-	struct sev_es_runtime_data *data;
+	struct sev_snp_runtime_data *snp_data;
+	int cpu;
+	int err;
+	struct ghcb_state state;
 	struct ghcb *ghcb;
 
-	data = this_cpu_read(runtime_data);
-	ghcb = &data->ghcb_page;
+	BUILD_BUG_ON(offsetof(struct sev_snp_runtime_data, hv_doorbell_page) % PAGE_SIZE);
 
-	if (state->ghcb) {
-		/* Restore GHCB from Backup */
-		*ghcb = *state->ghcb;
-		data->backup_ghcb_active = false;
-		state->ghcb = NULL;
-	} else {
-		data->ghcb_active = false;
+	if (!sev_snp_active() || !sev_restricted_injection_enabled())
+		return;
+
+	/* Allocate per-cpu doorbell pages */
+	for_each_possible_cpu(cpu) {
+		snp_data = memblock_alloc(sizeof(*snp_data), PAGE_SIZE);
+		if (!snp_data)
+			panic("Can't allocate SEV-SNP runtime data");
+
+		err = early_set_memory_decrypted((unsigned long)&snp_data->hv_doorbell_page,
+						 sizeof(snp_data->hv_doorbell_page));
+		if (err)
+			panic("Can't map #HV doorbell pages unencrypted");
+
+		memset(&snp_data->hv_doorbell_page, 0, sizeof(snp_data->hv_doorbell_page));
+
+		per_cpu(snp_runtime_data, cpu) = snp_data;
 	}
-}
 
-/* Needed in vc_early_forward_exception */
-void do_early_exception(struct pt_regs *regs, int trapnr);
-
-static inline u64 sev_es_rd_ghcb_msr(void)
-{
-	return __rdmsr(MSR_AMD64_SEV_ES_GHCB);
-}
-
-static __always_inline void sev_es_wr_ghcb_msr(u64 val)
-{
-	u32 low, high;
-
-	low  = (u32)(val);
-	high = (u32)(val >> 32);
-
-	native_wrmsr(MSR_AMD64_SEV_ES_GHCB, low, high);
+	ghcb = __sev_get_ghcb(&state);
+	sev_snp_setup_hv_doorbell_page(ghcb);
+	sev_es_put_ghcb(&state);
+	apic_set_eoi_write(hv_doorbell_apic_eoi_write);
 }
 
 static int vc_fetch_insn_kernel(struct es_em_ctxt *ctxt,
@@ -512,6 +682,19 @@ static enum es_result vc_slow_virt_to_phys(struct ghcb *ghcb, struct es_em_ctxt 
 
 /* Include code shared with pre-decompression boot stage */
 #include "sev-shared.c"
+
+void sev_snp_setup_hv_doorbell_page(struct ghcb *ghcb)
+{
+	u64 pa;
+	struct sev_hv_doorbell_page *hv_doorbell_page = sev_snp_current_doorbell_page();
+	enum es_result ret;
+
+	pa = __pa(hv_doorbell_page);
+	vc_ghcb_invalidate(ghcb);
+	ret = vmgexit_hv_doorbell_page(ghcb, SVM_VMGEXIT_SET_HV_DOORBELL_PAGE, pa);
+	if (ret != ES_OK)
+		panic("SEV-SNP: failed to set up #HV doorbell page");
+}
 
 void sev_snp_register_ghcb(unsigned long paddr)
 {
@@ -957,6 +1140,11 @@ int vmgexit_page_state_change(struct ghcb *ghcb, void *data)
 	ghcb_set_sw_scratch(ghcb, (u64)__pa(data));
 
 	return sev_es_ghcb_hv_call(ghcb, NULL, SVM_VMGEXIT_PAGE_STATE_CHANGE, 0, 0);
+}
+
+int vmgexit_hv_doorbell_page(struct ghcb *ghcb, u64 op, u64 pa)
+{
+	return sev_es_ghcb_hv_call(ghcb, NULL, SVM_VMGEXIT_HV_DOORBELL_PAGE, op, pa);
 }
 
 #ifdef CONFIG_HOTPLUG_CPU

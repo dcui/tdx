@@ -113,6 +113,9 @@ static const __initconst struct idt_data def_idts[] = {
 #elif defined(CONFIG_X86_32)
 	SYSG(IA32_SYSCALL_VECTOR,	entry_INT80_32),
 #endif
+#ifdef CONFIG_AMD_MEM_ENCRYPT
+	INTG(X86_TRAP_HV,		asm_exc_hv),
+#endif
 };
 
 /*
