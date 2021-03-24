@@ -117,8 +117,8 @@ void __init early_snp_set_memory_private(unsigned long vaddr, unsigned long padd
 		unsigned int npages);
 void __init early_snp_set_memory_shared(unsigned long vaddr, unsigned long paddr,
 		unsigned int npages);
-int snp_set_memory_shared(unsigned long vaddr, unsigned int npages);
-int snp_set_memory_private(unsigned long vaddr, unsigned int npages);
+int snp_set_memory_shared(unsigned long vaddr, unsigned long paddr, unsigned int npages);
+int snp_set_memory_private(unsigned long vaddr, unsigned long paddr, unsigned int npages);
 
 void sev_snp_setup_hv_doorbell_page(struct ghcb *ghcb);
 
@@ -141,8 +141,8 @@ early_snp_set_memory_shared(unsigned long vaddr, unsigned long paddr, unsigned i
 {
 	return 0;
 }
-static inline int snp_set_memory_shared(unsigned long vaddr, unsigned int npages) { return 0; }
-static inline int snp_set_memory_private(unsigned long vaddr, unsigned int npages) { return 0; }
+static inline int snp_set_memory_shared(unsigned long vaddr, unsigned long paddr, unsigned int npages) { return 0; }
+static inline int snp_set_memory_private(unsigned long vaddr, unsigned long paddr, unsigned int npages) { return 0; }
 
 static inline void sev_snp_setup_hv_doorbell_page(struct ghcb *ghcb) { return; }
 
