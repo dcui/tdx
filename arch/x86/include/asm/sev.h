@@ -90,6 +90,7 @@ extern struct ghcb *sev_es_get_ghcb(struct ghcb_state *state);
 extern void sev_es_put_ghcb(struct ghcb_state *state);
 extern int vmgexit_page_state_change(struct ghcb *ghcb, void *data);
 extern int vmgexit_hv_doorbell_page(struct ghcb *ghcb, u64 op, u64 pa);
+extern int vmgexit_snp_guest_request(unsigned long request, unsigned long response);
 
 #else
 static inline void sev_es_ist_enter(struct pt_regs *regs) { }
@@ -101,6 +102,7 @@ static inline struct ghcb *sev_es_get_ghcb(struct ghcb_state *state) { return NU
 static inline void sev_es_put_ghcb(struct ghcb_state *state) { }
 static inline int vmgexit_page_state_change(struct ghcb *ghcb, void *data) { return 0; }
 static inline int vmgexit_hv_doorbell_page(struct ghcb *ghcb, u64 op, u64 pa) { return 0; }
+static inline int vmgexit_snp_guest_request(unsigned long request, unsigned long response) { return 0; }
 #endif
 
 #endif

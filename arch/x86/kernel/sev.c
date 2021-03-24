@@ -1152,6 +1152,33 @@ int vmgexit_hv_doorbell_page(struct ghcb *ghcb, u64 op, u64 pa)
 	return sev_es_ghcb_hv_call(ghcb, NULL, SVM_VMGEXIT_HV_DOORBELL_PAGE, op, pa);
 }
 
+int vmgexit_snp_guest_request(unsigned long request, unsigned long response)
+{
+	enum es_result ret;
+	struct ghcb_state state;
+	struct ghcb *ghcb;
+	unsigned long request_pa, response_pa;
+	int fw_err;
+
+	if (!sev_snp_active())
+		return -ENXIO;
+
+	request_pa = __pa(request);
+	response_pa = __pa(response);
+
+	ghcb = sev_es_get_ghcb(&state);
+	vc_ghcb_invalidate(ghcb);
+	ret = sev_es_ghcb_hv_call(ghcb, NULL, SVM_VMGEXIT_SNP_GUEST_REQUEST,
+				request_pa, response_pa);
+	fw_err = ghcb->save.sw_exit_info_2;
+	sev_es_put_ghcb(&state);
+
+	if (ret != ES_OK)
+		fw_err = -ENXIO;
+	return fw_err;
+}
+EXPORT_SYMBOL_GPL(vmgexit_snp_guest_request);
+
 #ifdef CONFIG_HOTPLUG_CPU
 static void sev_es_ap_hlt_loop(void)
 {
