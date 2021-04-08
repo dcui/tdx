@@ -342,7 +342,7 @@ static __always_inline void sev_es_wr_ghcb_msr(u64 val)
  *
  * Callers must disable local interrupts around it.
  */
-static noinstr struct ghcb *__sev_get_ghcb(struct ghcb_state *state)
+noinstr struct ghcb *__sev_get_ghcb(struct ghcb_state *state)
 {
 	struct sev_es_runtime_data *data;
 	struct ghcb *ghcb;
@@ -912,6 +912,8 @@ e_fail:
 	sev_es_terminate(GHCB_SEV_ES_REASON_GENERAL_REQUEST);
 }
 
+int hv_mark_gpa_visibility(u16 count, const u64 pfn[], u32 visibility);
+
 int snp_set_memory_shared(unsigned long vaddr, unsigned long paddr, unsigned int npages)
 {
 	/* Invalidate the memory before changing the page state in the RMP table. */
@@ -925,8 +927,16 @@ int snp_set_memory_shared(unsigned long vaddr, unsigned long paddr, unsigned int
 
 int snp_set_memory_private(unsigned long vaddr, unsigned long paddr, unsigned int npages)
 {
+	unsigned int i;
+	u64 pfn = paddr >> PAGE_SHIFT;
+
 	/* Change the page state in the RMP table. */
-	early_snp_set_page_state(paddr, npages, SNP_PAGE_STATE_PRIVATE);
+	//early_snp_set_page_state(paddr, npages, SNP_PAGE_STATE_PRIVATE);
+
+	for (i = 0; i < npages; i ++) {
+		hv_mark_gpa_visibility(1, &pfn, 0);
+		pfn++;
+	}
 
 	/* Validate the memory after the memory is made private in the RMP table. */
 	sev_snp_issue_pvalidate(vaddr, npages, true);
@@ -1166,12 +1176,12 @@ int vmgexit_snp_guest_request(unsigned long request, unsigned long response)
 	request_pa = __pa(request);
 	response_pa = __pa(response);
 
-	ghcb = sev_es_get_ghcb(&state);
+	ghcb = __sev_get_ghcb(&state);
 	vc_ghcb_invalidate(ghcb);
 	ret = sev_es_ghcb_hv_call(ghcb, NULL, SVM_VMGEXIT_SNP_GUEST_REQUEST,
 				request_pa, response_pa);
 	fw_err = ghcb->save.sw_exit_info_2;
-	sev_es_put_ghcb(&state);
+	__sev_put_ghcb(&state);
 
 	if (ret != ES_OK)
 		fw_err = -ENXIO;

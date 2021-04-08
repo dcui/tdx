@@ -28,7 +28,7 @@
 #include <crypto/aead.h>
 #include <linux/scatterlist.h>
 #include <linux/random.h>
-#include <asm/sev-es.h>
+#include <asm/sev.h>
 
 #define DEVICE_NAME		"sev"
 #define AAD_LEN			48
