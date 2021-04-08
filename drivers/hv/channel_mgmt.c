@@ -988,9 +988,17 @@ find_primary_channel_by_offer(const struct vmbus_channel_offer_channel *offer)
 static bool vmbus_is_valid_device(const guid_t *guid)
 {
 	u16 i;
+	static const guid_t srv_id_template =
+		GUID_INIT(0x00000000, 0xfacb, 0x11e6, 0xbd, 0x58,
+			  0x64, 0x00, 0x6a, 0x79, 0x86, 0xd3);
 
 	if (!hv_is_isolation_supported())
 		return true;
+
+	if (memcmp(&guid->b[4], &srv_id_template.b[4], sizeof(guid_t) - 4) == 0) {
+		printk("%s:%d (%s): vsock!\n", __FILE__, __LINE__, __func__);
+		return true;
+	}
 
 	for (i = 0; i < ARRAY_SIZE(vmbus_devs); i++) {
 		if (guid_equal(guid, &vmbus_devs[i].guid))
