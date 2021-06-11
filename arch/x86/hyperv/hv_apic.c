@@ -113,6 +113,7 @@ static bool __send_ipi_mask_ex(const struct cpumask *mask, int vector,
 	unsigned long flags;
 	int nr_bank = 0;
 	u64 status = HV_STATUS_INVALID_PARAMETER;
+	int ret = 0;
 
 	if (!(ms_hyperv.hints & HV_X64_EX_PROCESSOR_MASKS_RECOMMENDED))
 		return false;
@@ -167,6 +168,7 @@ static bool __send_ipi_mask(const struct cpumask *mask, int vector,
 	struct hv_send_ipi ipi_arg;
 	u64 status;
 	unsigned int weight;
+	int ret;
 
 	trace_hyperv_send_ipi_mask(mask, vector);
 
@@ -267,7 +269,7 @@ static void hv_send_ipi(int cpu, int vector)
 
 static void hv_send_ipi_mask(const struct cpumask *mask, int vector)
 {
-	if (!__send_ipi_mask(mask, vector)) {
+	if (!__send_ipi_mask(mask, vector, false)) {
 		if (!hv_isolation_type_snp())
 			orig_apic.send_IPI_mask(mask, vector);
 		else
@@ -284,7 +286,7 @@ static void hv_send_ipi_mask_allbutself(const struct cpumask *mask, int vector)
 	cpumask_copy(&new_mask, mask);
 	cpumask_clear_cpu(this_cpu, &new_mask);
 	local_mask = &new_mask;
-	if (!__send_ipi_mask(local_mask, vector)) {
+	if (!__send_ipi_mask(local_mask, vector, true)) {
 		if (!hv_isolation_type_snp())
 			orig_apic.send_IPI_mask_allbutself(mask, vector);
 		else
@@ -299,7 +301,7 @@ static void hv_send_ipi_allbutself(int vector)
 
 static void hv_send_ipi_all(int vector)
 {
-	if (!__send_ipi_mask(cpu_online_mask, vector)) {
+	if (!__send_ipi_mask(cpu_online_mask, vector, false)) {
 		if (!hv_isolation_type_snp())
 			orig_apic.send_IPI_all(vector);
 		else

@@ -171,6 +171,20 @@ static void do_exc_hv(struct pt_regs *regs)
 			sysvec_call_function(regs);
 			break;
 #endif
+#ifdef CONFIG_X86_LOCAL_APIC
+		case ERROR_APIC_VECTOR:
+			sysvec_error_interrupt(regs);
+			break;
+		case SPURIOUS_APIC_VECTOR:
+			sysvec_spurious_apic_interrupt(regs);
+			break;
+		case LOCAL_TIMER_VECTOR:
+			sysvec_apic_timer_interrupt(regs);
+			break;
+		case X86_PLATFORM_IPI_VECTOR:
+			sysvec_x86_platform_ipi(regs);
+			break;
+#endif			
 		case 0x0:
 			break;
 		default:
