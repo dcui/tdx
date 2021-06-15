@@ -205,6 +205,7 @@ void check_hv_pending(struct pt_regs *regs)
 			asm volatile("int %0" :: "i" (X86_TRAP_HV));
 	}
 }
+EXPORT_SYMBOL_GPL(check_hv_pending);
 
 DEFINE_IDTENTRY_RAW(exc_hv)
 {
