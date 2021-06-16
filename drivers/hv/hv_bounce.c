@@ -267,7 +267,7 @@ static void hv_bounce_page_list_maintain(struct work_struct *work)
 		 * list is expected to be sorted on LRU.
 		 */
 		if (time_before(jiffies, bounce_page->last_used_jiff +
-				BP_MIN_TIME_IN_FREE_LIST) || true)
+				BP_MIN_TIME_IN_FREE_LIST))
 			break;
 		list_del(&bounce_page->link);
 		list_add_tail(&bounce_page->link, &head_to_free);
