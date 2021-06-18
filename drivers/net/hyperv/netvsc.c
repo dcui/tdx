@@ -372,7 +372,7 @@ static int netvsc_init_buf(struct hv_device *device,
 	int ret = 0, i;
 
 	ret = hv_bounce_resources_reserve(device->channel,
-			PAGE_SIZE * 1024);
+			PAGE_SIZE * 4096);
 	if (ret) {
 		pr_warn("Fail to reserve bounce buffer.\n");
 		return -ENOMEM;
