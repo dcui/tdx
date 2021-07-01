@@ -744,7 +744,7 @@ static void handle_sc_creation(struct vmbus_channel *new_sc)
 	stor_device->stor_chns[new_sc->target_cpu] = new_sc;
 	cpumask_set_cpu(new_sc->target_cpu, &stor_device->alloced_cpus);
 
-	if (hv_bounce_resources_reserve(device->channel,
+	if (hv_bounce_resources_reserve(new_sc,
 			stor_device->max_transfer_bytes))
 		pr_warn("Fail to reserve bounce buffer\n");
 }
