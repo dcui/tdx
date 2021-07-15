@@ -769,7 +769,7 @@ e_fail:
 	sev_es_terminate(GHCB_SEV_ES_REASON_GENERAL_REQUEST);
 }
 
-static void early_snp_set_page_state(unsigned long paddr, unsigned int npages, int op)
+static void __init early_snp_set_page_state(unsigned long paddr, unsigned int npages, int op)
 {
 	unsigned long paddr_end, paddr_next;
 	u64 val;
@@ -844,8 +844,10 @@ static int snp_page_state_vmgexit(struct ghcb *ghcb, struct snp_page_state_chang
 		ghcb_set_sw_scratch(ghcb, (u64)__pa(data));
 		ret = vmgexit_page_state_change(ghcb, data);
 		/* Page State Change VMGEXIT can pass error code through exit_info_2. */
-		if (ret || ghcb->save.sw_exit_info_2)
+		if (ret || ghcb->save.sw_exit_info_2) {
+			printk("exit_info1=%llx exit_info2=%llx\n", ghcb->save.sw_exit_info_1, ghcb->save.sw_exit_info_2);
 			break;
+		}
 	}
 
 	return ret;
@@ -888,18 +890,21 @@ static void snp_set_page_state(unsigned long paddr, unsigned int npages, int op)
 		hdr->end_entry = idx;
 		e->gfn = paddr >> PAGE_SHIFT;
 		e->operation = op;
-		e->pagesize = X86_RMP_PG_LEVEL(level);
+		e->pagesize = RMP_PG_SIZE_4K;
 		e++;
 		idx++;
-		paddr_next = paddr + page_level_size(level);
+		paddr_next = paddr + PAGE_SIZE;		
 	}
 
 	/*
 	 * We can exit the above loop before issuing the VMGEXIT, if we exited before calling the
 	 * the VMGEXIT, then issue the VMGEXIT now.
 	 */
-	if (idx)
+	if (idx) {
 		ret = snp_page_state_vmgexit(ghcb, data);
+		if (ret)
+			goto e_fail;
+	}
 
 	sev_es_put_ghcb(&state);
 	return;
@@ -918,16 +923,18 @@ int snp_set_memory_shared(unsigned long vaddr, unsigned long paddr, unsigned int
 	sev_snp_issue_pvalidate(vaddr, npages, false);
 
 	/* Change the page state in the RMP table. */
-	early_snp_set_page_state(paddr, npages, SNP_PAGE_STATE_SHARED);
+	snp_set_page_state(paddr, npages, SNP_PAGE_STATE_SHARED);
 
 	return 0;
 }
 
 int snp_set_memory_private(unsigned long vaddr, unsigned long paddr, unsigned int npages)
 {
+	printk("set memory private vaddr=%llx paddr=%llx npages=%d!\n", vaddr, paddr, npages);
+
 	/* Change the page state in the RMP table. */
 	//early_snp_set_page_state(paddr, npages, SNP_PAGE_STATE_PRIVATE);
-	early_snp_set_page_state(paddr, npages, SNP_PAGE_STATE_PRIVATE);
+	snp_set_page_state(paddr, npages, SNP_PAGE_STATE_PRIVATE);
 	
 	/* Validate the memory after the memory is made private in the RMP table. */
 	sev_snp_issue_pvalidate(vaddr, npages, true);
@@ -1143,8 +1150,6 @@ static bool __init sev_es_setup_ghcb(void)
 
 int vmgexit_page_state_change(struct ghcb *ghcb, void *data)
 {
-	ghcb_set_sw_scratch(ghcb, (u64)__pa(data));
-
 	return sev_es_ghcb_hv_call(ghcb, NULL, SVM_VMGEXIT_PAGE_STATE_CHANGE, 0, 0);
 }
 
