@@ -1429,10 +1429,10 @@ class IGVMFile(VMState):
         id_block = IGVM_VHS_SNP_ID_BLOCK(1, 0, (c_uint8 * 3)(), block.Ld, block.FamilyId, block.ImageId, block.Version, 1, 1, 0, signature, public_key)
         return id_block
 
-    def raw(self, vmsa_page, cpuid_page, secret_page, param_page):
+    def raw(self, vmsa_page, cpuid_page, secret_page, param_page, vtl):
         headers = [IGVM_FIXED_HEADER(IGVM_MAGIC_VALUE, 1, sizeof(IGVM_FIXED_HEADER), 0, 0, 0),
                    IGVM_VHS_VARIABLE_HEADER(IGVM_VHT_SUPPORTED_PLATFORM, sizeof(IGVM_VHS_SUPPORTED_PLATFORM)),
-                   IGVM_VHS_SUPPORTED_PLATFORM(1, 2, 2, 1, 0),
+                   IGVM_VHS_SUPPORTED_PLATFORM(1, vtl, 2, 1, 0),
                    IGVM_VHS_VARIABLE_HEADER(IGVM_VHT_SNP_POLICY, sizeof(IGVM_VHS_SNP_POLICY)),
                    IGVM_VHS_SNP_POLICY(0x3001f, 1, 0)]
         offset = sum([sizeof(s) for s in headers])
@@ -1513,7 +1513,7 @@ class IGVMFile(VMState):
         headers[0].TotalFileSize = offset
         return b''.join([bytearray(h) for h in headers]) + body
 
-def load_kernel(kernel, cmdline, ramdisk):
+def load_kernel(kernel, cmdline, ramdisk, vtl):
     assert type(kernel) is bytearray
     assert type(cmdline) is bytearray
     assert type(ramdisk) is bytearray
@@ -1578,7 +1578,7 @@ def load_kernel(kernel, cmdline, ramdisk):
     acpi = pickle.loads(zlib.decompress(base64.b64decode(ACPI)))
     for gpa in acpi:
         state.memory.write(gpa, acpi[gpa])
-    return state.raw(0x200000, 0x800000, 0x801000, 0x802000)
+    return state.raw(0x200000, 0x800000, 0x801000, 0x802000, vtl)
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
@@ -1587,6 +1587,7 @@ if __name__ == '__main__':
     parser.add_argument('-kernel', type = argparse.FileType('rb'), metavar = 'bzImage')
     parser.add_argument('-append', type = str, metavar = 'cmdline')
     parser.add_argument('-rdinit', type = argparse.FileType('rb'), metavar = 'ramdisk')
+    parser.add_argument('-vtl', type = int, metavar = '2', help = 'highest vtl', required = True)
     args = parser.parse_args()
     if args.d:
         IGVMFile.dump(bytearray(args.d.read()))
@@ -1595,7 +1596,7 @@ if __name__ == '__main__':
         kernel = bytearray(args.kernel.read())
         ramdisk = bytearray(args.rdinit.read()) if args.rdinit else bytearray()
         cmdline = bytearray(args.append, 'ascii')
-        rawbytes = load_kernel(kernel, cmdline, ramdisk)
+        rawbytes = load_kernel(kernel, cmdline, ramdisk, args.vtl)
         args.o.write(rawbytes)
     else:
         parser.print_help()
