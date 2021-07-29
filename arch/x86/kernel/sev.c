@@ -845,7 +845,7 @@ static int snp_page_state_vmgexit(struct ghcb *ghcb, struct snp_page_state_chang
 		ret = vmgexit_page_state_change(ghcb, data);
 		/* Page State Change VMGEXIT can pass error code through exit_info_2. */
 		if (ret || ghcb->save.sw_exit_info_2) {
-			printk("exit_info1=%llx exit_info2=%llx\n", ghcb->save.sw_exit_info_1, ghcb->save.sw_exit_info_2);
+			//printk("exit_info1=%llx exit_info2=%llx\n", ghcb->save.sw_exit_info_1, ghcb->save.sw_exit_info_2);
 			break;
 		}
 	}
@@ -930,7 +930,7 @@ int snp_set_memory_shared(unsigned long vaddr, unsigned long paddr, unsigned int
 
 int snp_set_memory_private(unsigned long vaddr, unsigned long paddr, unsigned int npages)
 {
-	printk("set memory private vaddr=%llx paddr=%llx npages=%d!\n", vaddr, paddr, npages);
+	//printk("set memory private vaddr=%llx paddr=%llx npages=%d!\n", vaddr, paddr, npages);
 
 	/* Change the page state in the RMP table. */
 	//early_snp_set_page_state(paddr, npages, SNP_PAGE_STATE_PRIVATE);
