@@ -531,6 +531,10 @@ static void vmbus_add_channel_work(struct work_struct *work)
 		goto err_deq_chan;
 
 	newchannel->device_obj->device_id = newchannel->device_id;
+
+	if (hv_init_channel_ivm(newchannel))
+		goto err_deq_chan;
+
 	/*
 	 * Add the new device to the bus. This will kick off device-driver
 	 * binding which eventually invokes the device driver's AddDevice()
@@ -546,9 +550,6 @@ static void vmbus_add_channel_work(struct work_struct *work)
 	}
 
 	newchannel->probe_done = true;
-
-	if (hv_init_channel_ivm(newchannel))
-		goto err_deq_chan;
 
 	return;
 
