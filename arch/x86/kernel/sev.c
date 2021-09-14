@@ -124,9 +124,7 @@ struct sev_hv_doorbell_page *sev_snp_current_doorbell_page(void)
 
 static void hv_doorbell_apic_eoi_write(u32 reg, u32 val)
 {
-	struct sev_hv_doorbell_page *hv_doorbell_page = sev_snp_current_doorbell_page();;
-
-	if (xchg(&hv_doorbell_page->no_eoi_required, 0) & 0x1)
+	if (xchg(&sev_snp_current_doorbell_page()->no_eoi_required, 0) & 0x1)
 		return;
 
 	BUG_ON(reg != APIC_EOI);
@@ -137,7 +135,6 @@ static DEFINE_PER_CPU(u8, hv_pending);
 
 static void do_exc_hv(struct pt_regs *regs)
 {
-	struct sev_hv_doorbell_page *hvp = sev_snp_current_doorbell_page();
 	u8 vector;
 
 	BUG_ON((native_save_fl() & X86_EFLAGS_IF) == 0);
@@ -145,7 +142,7 @@ static void do_exc_hv(struct pt_regs *regs)
 	while (this_cpu_read(hv_pending)) {
 		asm volatile("cli": : :"memory");
 		this_cpu_write(hv_pending, 0);
-		vector = xchg(&hvp->vector, 0);
+		vector = xchg(&sev_snp_current_doorbell_page()->vector, 0);
 
 		switch (vector) {
 #if IS_ENABLED(CONFIG_HYPERV)
@@ -213,12 +210,10 @@ EXPORT_SYMBOL_GPL(check_hv_pending);
 
 DEFINE_IDTENTRY_RAW(exc_hv)
 {
-	struct sev_hv_doorbell_page *hvp = sev_snp_current_doorbell_page();
-
 	this_cpu_write(hv_pending, 1);
 
 	/* Clear the no_further_signal bit */
-	hvp->pending_events &= 0x7fff;
+	sev_snp_current_doorbell_page()->pending_events &= 0x7fff;
 
 	/* TODO: handle NMI and MC? */
 
@@ -706,10 +701,9 @@ static inline u64 vmgexit_ghcb_msr(u64 val) {
 void sev_snp_setup_hv_doorbell_page(struct ghcb *ghcb)
 {
 	u64 pa;
-	struct sev_hv_doorbell_page *hv_doorbell_page = sev_snp_current_doorbell_page();
 	enum es_result ret;
 
-	pa = __pa(hv_doorbell_page);
+	pa = __pa(sev_snp_current_doorbell_page());
 	vc_ghcb_invalidate(ghcb);
 	ret = vmgexit_hv_doorbell_page(ghcb, SVM_VMGEXIT_SET_HV_DOORBELL_PAGE, pa);
 	if (ret != ES_OK)
