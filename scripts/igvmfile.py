@@ -8,6 +8,7 @@ import argparse
 import base64
 import zlib
 import pickle
+import json
 
 PGSIZE = 0x1000
 
@@ -118,6 +119,108 @@ def dumps(struct):
             ans.append('%s:%s' % (field_info[0], repr(field)))
     ans.append('}')
     return ' '.join(ans)
+
+# For policy structure check table 20 in https://www.amd.com/system/files/TechDocs/56860.pdf
+# SEV Secure Nested Paging Firmware ABI Specification
+
+DEFAULT_POLICY          = 0X20000
+DEBUG_BIT_OFFSET        = 19
+MIGRATE_MA_BIT_OFFSET   = 18
+SMT_BIT_OFFSET          = 16
+ABI_MAJOR_OFFSET        = 8
+ABI_MINOR_OFFSET        = 0
+
+# sample json
+# {
+#     "tei_config_name" : "confidential_ml_cvm",
+#     "tei_config_version"     : 1,
+#     "tei_config_data" : {
+#         "version"   : 1,
+#         "guest_svn" : 2,
+#         "family_id" : "12161A1B12161A1B12161A1B12161A1B",
+#         "image_id"  : "1A1B12161A1B12161A1B12161A1B1216",
+#         "policy":{
+#             "debug_allowed" : false,
+#             "migrate_ma"    : false,
+#             "smt_allowed"   : true,
+#             "abi_major"     : 0,
+#             "abi_minor"     : 31
+#         }
+#     }
+# } 
+
+class TEIConfig():
+    def __init__(self, file_path = ''):
+        if file_path == '': # if no file provided return default values
+            self.version    = (c_uint32)(1)
+            self.guest_svn  = (c_uint32)(2)
+            self.family_id  = (c_uint8 * 16)(1)
+            self.image_id   = (c_uint8 * 16)(2)
+            self.policy     = (c_uint64)(0x3001f)
+            return
+
+        try:
+            f = open(file_path, 'r')
+        except FileNotFoundError:
+            print("Wrong config file path")
+        else:
+            with f:
+                try:
+                    data = json.load(f)
+                except ValueError: # if data is not in json format
+                    print("configuration is not in valid json format")
+                else:
+                    if not self.is_tei_config_valid(data): # validate config fields
+                        raise Exception(" not valid config data ")
+
+                    config_data     = data['tei_config_data']
+                    self.version    = (c_uint32)(config_data['version'] if 'version' in config_data.keys() else 1)
+                    self.guest_svn  = (c_uint32)(config_data['guest_svn'] if 'guest_svn' in config_data.keys() else 2)
+                    if 'family_id' in config_data.keys():
+                        family_id_decimal = int(config_data['family_id'], 16)
+                        self.family_id  = (c_uint8 * 16)(*list(family_id_decimal.to_bytes(16, 'little')))
+                    else:
+                        self.family_id = (c_uint8 * 16)(1)
+
+                    if 'image_id' in config_data.keys():
+                        image_id_decimal = int(config_data['image_id'], 16)
+                        self.image_id = (c_uint8 * 16)(*list(image_id_decimal.to_bytes(16, 'little')))
+                    else:
+                        self.image_id = (c_uint8 * 16)(2)
+
+                    if 'policy' in config_data.keys():
+                        self.policy = (c_uint64)(self.construct_policy(config_data['policy']))
+                    else:
+                        self.policy = (c_uint64)(0x3001f)
+    
+    # todo :: all the configuration validations can be added here
+    def is_tei_config_valid(self, data):
+        return True
+
+    def construct_policy(self, policy_dictionary):
+        policy = DEFAULT_POLICY
+        if 'debug_allowed' in policy_dictionary.keys():
+            policy = policy | policy_dictionary['debug_allowed'] << DEBUG_BIT_OFFSET
+        if 'migrate_ma' in policy_dictionary.keys():
+            policy = policy | policy_dictionary['migrate_ma'] << MIGRATE_MA_BIT_OFFSET
+        if 'smt_allowed' in policy_dictionary.keys():
+            policy = policy | policy_dictionary['smt_allowed'] << SMT_BIT_OFFSET
+        if 'abi_major' in policy_dictionary.keys():
+            policy = policy | policy_dictionary['abi_major'] << ABI_MAJOR_OFFSET
+        if 'abi_minor' in policy_dictionary.keys():
+            policy = policy | policy_dictionary['abi_minor'] << ABI_MINOR_OFFSET
+        return policy
+
+    def __repr__(self):
+        repr = "\n============Config details================\n"
+        repr += f'Version: {self.version} \n'
+        repr += f'Guest SVN: {self.guest_svn} \n'
+        repr += f'Family ID: {self.family_id} {cast(self.family_id, c_char_p).value} \n'
+        repr += f'Image ID: {self.image_id}, {cast(self.image_id, c_char_p).value} \n'
+        repr += f'Policy: {self.policy} hex: {hex(self.policy.value)}\n'
+        repr += f'==========================================\n'
+        return repr
+
 
 class setup_header(Structure):
     _pack_ = 1
@@ -1269,10 +1372,12 @@ class VMState(object):
         self.regs.idtr.limit = idt_size - 1
 
 class IGVMFile(VMState):
-    def __init__(self):
+    def __init__(self, config, sign_key):
         VMState.__init__(self, 0x86)
         self.skipped_regions = []
         self.regs.efer.SVME = 1
+        self.config = config
+        self.sign_key = sign_key
 
     def seek(self, addr):
         assert addr & ~(PGSIZE - 1) == addr
@@ -1417,16 +1522,21 @@ class IGVMFile(VMState):
         return vmsa
 
     def gen_id_block(self, digest):
-        sk = SigningKey.generate(curve=NIST384p, hashfunc=sha384)
-        x = sk.verifying_key.pubkey.point.x()
-        y = sk.verifying_key.pubkey.point.y()
-        block = SNP_ID_BLOCK((c_uint8 * 48)(*digest), (c_uint8 * 16)(1), (c_uint8 * 16)(2), 1, 1, 0x3001f)
-        r, s = sk.sign(bytearray(block), sigencode=lambda r, s, o: (r, s))
+        x = self.sign_key.verifying_key.pubkey.point.x()
+        y = self.sign_key.verifying_key.pubkey.point.y()
+
+        block = SNP_ID_BLOCK((c_uint8 * 48)(*digest), 
+                                self.config.family_id, 
+                                self.config.image_id, 
+                                self.config.version, 
+                                self.config.guest_svn, 
+                                self.config.policy)
+        r, s = self.sign_key.sign(bytearray(block), sigencode=lambda r, s, o: (r, s))
         signature = IGVM_VHS_SNP_ID_BLOCK_SIGNATURE((c_uint8 * 72)(*list(r.to_bytes(48, 'little'))),
                                                     (c_uint8 * 72)(*list(s.to_bytes(48, 'little'))))
         public_key = IGVM_VHS_SNP_ID_BLOCK_PUBLIC_KEY(2, 0, (c_uint8 * 72)(*list(x.to_bytes(48, 'little'))),
                                                             (c_uint8 * 72)(*list(y.to_bytes(48, 'little'))))
-        id_block = IGVM_VHS_SNP_ID_BLOCK(1, 0, (c_uint8 * 3)(), block.Ld, block.FamilyId, block.ImageId, block.Version, 1, 1, 0, signature, public_key)
+        id_block = IGVM_VHS_SNP_ID_BLOCK(1, 0, (c_uint8 * 3)(), block.Ld, block.FamilyId, block.ImageId, block.Version, block.GuestSvn, 1, 0, signature, public_key)
         return id_block
 
     def raw(self, vmsa_page, cpuid_page, secret_page, param_page, vtl):
@@ -1513,11 +1623,11 @@ class IGVMFile(VMState):
         headers[0].TotalFileSize = offset
         return b''.join([bytearray(h) for h in headers]) + body
 
-def load_kernel(kernel, cmdline, ramdisk, vtl):
+def load_kernel(kernel, cmdline, ramdisk, vtl, config, sign_key):
     assert type(kernel) is bytearray
     assert type(cmdline) is bytearray
     assert type(ramdisk) is bytearray
-    state = IGVMFile()
+    state = IGVMFile(config, sign_key)
     state.memory.allocate(0x200000) # [0-2MB) for ACPI-related data
     state.memory.allocate(PGSIZE) # VMSA page
     state.seek(0x800000)
@@ -1588,7 +1698,26 @@ if __name__ == '__main__':
     parser.add_argument('-append', type = str, metavar = 'cmdline')
     parser.add_argument('-rdinit', type = argparse.FileType('rb'), metavar = 'ramdisk')
     parser.add_argument('-vtl', type = int, metavar = '2', help = 'highest vtl', required = True)
+    parser.add_argument('-config_file', type = str, help = 'igvm config file', required = False )
+    parser.add_argument('-sign_key', type = argparse.FileType('rb'), help = 'private signing key', required = False)
+    #sample key can be generated using `openssl ecparam -out ca.key -name secp384r1 -genkey`
     args = parser.parse_args()
+    
+    if args.config_file:
+        try:
+            file = open(args.config_file, 'r')
+        except FileNotFoundError:
+            print("Wrong config file path")
+        config = TEIConfig(args.config_file)
+    else:
+        config = TEIConfig() #if no file is given , initialize with default config values
+
+    if args.sign_key:
+        sk_pem = args.sign_key.read()
+        sign_key = SigningKey.from_pem(sk_pem, hashfunc=sha384)
+    else:   #if no key is supplied , generate an ephermeral key for signing purpose
+        sign_key = SigningKey.generate(curve=NIST384p, hashfunc=sha384)
+
     if args.d:
         IGVMFile.dump(bytearray(args.d.read()))
     elif args.o:
@@ -1596,7 +1725,7 @@ if __name__ == '__main__':
         kernel = bytearray(args.kernel.read())
         ramdisk = bytearray(args.rdinit.read()) if args.rdinit else bytearray()
         cmdline = bytearray(args.append, 'ascii')
-        rawbytes = load_kernel(kernel, cmdline, ramdisk, args.vtl)
+        rawbytes = load_kernel(kernel, cmdline, ramdisk, args.vtl, config, sign_key)
         args.o.write(rawbytes)
     else:
         parser.print_help()

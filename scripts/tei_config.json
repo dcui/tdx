@@ -1,0 +1,17 @@
+{
+    "tei_config_name" : "confidential_ml_cvm",
+    "tei_config_version"     : 1,
+    "tei_config_data" : {
+        "version"   : 1,
+        "guest_svn" : 2,
+        "family_id" : "12161A1B12161A1B12161A1B12161A1B",
+        "image_id"  : "1A1B12161A1B12161A1B12161A1B1216",
+        "policy":{
+            "debug_allowed" : false,
+            "migrate_ma"    : false,
+            "smt_allowed"   : true,
+            "abi_major"     : 0,
+            "abi_minor"     : 31
+        }
+    }
+}
