@@ -178,13 +178,13 @@ class TEIConfig():
                     self.guest_svn  = (c_uint32)(config_data['guest_svn'] if 'guest_svn' in config_data.keys() else 2)
                     if 'family_id' in config_data.keys():
                         family_id_decimal = int(config_data['family_id'], 16)
-                        self.family_id  = (c_uint8 * 16)(*list(family_id_decimal.to_bytes(16, 'little')))
+                        self.family_id  = (c_uint8 * 16)(*list(family_id_decimal.to_bytes(16, 'big')))
                     else:
                         self.family_id = (c_uint8 * 16)(1)
 
                     if 'image_id' in config_data.keys():
                         image_id_decimal = int(config_data['image_id'], 16)
-                        self.image_id = (c_uint8 * 16)(*list(image_id_decimal.to_bytes(16, 'little')))
+                        self.image_id = (c_uint8 * 16)(*list(image_id_decimal.to_bytes(16, 'big')))
                     else:
                         self.image_id = (c_uint8 * 16)(2)
 
