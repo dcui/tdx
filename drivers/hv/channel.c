@@ -17,6 +17,7 @@
 #include <linux/hyperv.h>
 #include <linux/uio.h>
 #include <linux/interrupt.h>
+#include <asm/set_memory.h>
 #include <asm/page.h>
 #include <asm/mshyperv.h>
 
@@ -152,6 +153,10 @@ void vmbus_free_ring(struct vmbus_channel *channel)
 	hv_ringbuffer_cleanup(&channel->inbound);
 
 	if (channel->ringbuffer_page) {
+		if (is_tdx_guest())
+			set_memory_encrypted((unsigned long)page_address(channel->ringbuffer_page),
+					1 << get_order(channel->ringbuffer_pagecount << PAGE_SHIFT));
+
 		__free_pages(channel->ringbuffer_page,
 			     get_order(channel->ringbuffer_pagecount
 				       << PAGE_SHIFT));
@@ -180,6 +185,9 @@ int vmbus_alloc_ring(struct vmbus_channel *newchannel,
 
 	if (!page)
 		return -ENOMEM;
+
+	if (is_tdx_guest())
+		set_memory_decrypted((unsigned long)page_address(page), 1 << order);
 
 	newchannel->ringbuffer_page = page;
 	newchannel->ringbuffer_pagecount = (send_size + recv_size) >> PAGE_SHIFT;

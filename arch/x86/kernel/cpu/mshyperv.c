@@ -18,6 +18,7 @@
 #include <linux/kexec.h>
 #include <linux/i8253.h>
 #include <linux/random.h>
+#include <linux/set_memory.h>
 #include <asm/processor.h>
 #include <asm/hypervisor.h>
 #include <asm/hyperv-tlfs.h>
@@ -32,6 +33,8 @@
 #include <asm/nmi.h>
 #include <clocksource/hyperv_timer.h>
 #include <asm/numa.h>
+
+#define D printk("%s:%d\n", __FILE__, __LINE__)
 
 /* Is Linux running as the root partition? */
 bool hv_root_partition;
@@ -177,8 +180,10 @@ static uint32_t  __init ms_hyperv_platform(void)
 	u32 eax;
 	u32 hyp_signature[3];
 
-	if (!boot_cpu_has(X86_FEATURE_HYPERVISOR))
-		return 0;
+	if (!boot_cpu_has(X86_FEATURE_HYPERVISOR)) {
+		D;
+		//return 0;
+	}
 
 	cpuid(HYPERV_CPUID_VENDOR_AND_MAX_FUNCTIONS,
 	      &eax, &hyp_signature[0], &hyp_signature[1], &hyp_signature[2]);
@@ -187,6 +192,8 @@ static uint32_t  __init ms_hyperv_platform(void)
 	    eax <= HYPERV_CPUID_MAX &&
 	    !memcmp("Microsoft Hv", hyp_signature, 12))
 		return HYPERV_CPUID_VENDOR_AND_MAX_FUNCTIONS;
+
+	D;
 
 	return 0;
 }
@@ -414,7 +421,7 @@ static void __init ms_hyperv_init_platform(void)
 	x86_platform.apic_post_init = hyperv_init;
 	hyperv_setup_mmu_ops();
 	/* Setup the IDT for hypervisor callback */
-	alloc_intr_gate(HYPERVISOR_CALLBACK_VECTOR, asm_sysvec_hyperv_callback);
+	alloc_intr_gate(HYPERV_CALLBACK_VECTOR2, asm_sysvec_hyperv_callback);
 
 	/* Setup the IDT for reenlightenment notifications */
 	if (ms_hyperv.features & HV_ACCESS_REENLIGHTENMENT) {
@@ -484,6 +491,20 @@ int hv_mark_gpa_visibility(u16 count, const u64 pfn[], u32 visibility)
 	u16 pages_processed;
 	u64 hv_status;
 	unsigned long flags;
+
+	printk("hv_mark_gpa_visibility %hd\n", count);
+	if (is_tdx_guest()) {
+		int i, ret;
+		for (i = 0; i < count; i++) {
+			if (visibility != VMBUS_PAGE_NOT_VISIBLE)
+				ret = set_memory_decrypted((unsigned long)__va(pfn[i] << PAGE_SHIFT), 1);
+			else
+				ret = set_memory_encrypted((unsigned long)__va(pfn[i] << PAGE_SHIFT), 1);
+			if (ret)
+				pr_err("set_memory failed: %d\n", ret);
+		}
+		return 0;
+	}
 
 	/* no-op if partition isolation is not enabled */
 	if (!hv_partition_is_isolated())

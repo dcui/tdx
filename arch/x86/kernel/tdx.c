@@ -70,6 +70,18 @@ static inline u64 tdvmcall_out_r11(u64 fn, u64 r12, u64 r13, u64 r14, u64 r15)
 	return out.r11;
 }
 
+u64 tdvmcall_hyperv(u64 control, u64 input_addr, u64 output_addr)
+{
+	u64 r11, rax;
+
+	rax = __tdvmcall_vendor_hyperv(output_addr, control, input_addr, &r11);
+
+	WARN_ON(rax);
+
+	return r11;
+}
+EXPORT_SYMBOL_GPL(tdvmcall_hyperv);
+
 static inline bool cpuid_has_tdx_guest(void)
 {
 	u32 eax, signature[3];
@@ -596,6 +608,7 @@ void __init tdx_early_init(void)
 	setup_force_cpu_cap(X86_FEATURE_TDX_GUEST);
 
 	setup_clear_cpu_cap(X86_FEATURE_MCE);
+	setup_clear_cpu_cap(X86_FEATURE_MTRR);
 
 	tdg_get_info();
 

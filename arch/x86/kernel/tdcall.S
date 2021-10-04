@@ -8,7 +8,9 @@
 #include <linux/linkage.h>
 
 #define TDVMCALL_VENDOR_KVM		0x4d564b2e584454 /* "TDX.KVM" */
+#define TDVMCALL_VENDOR_HYPERV		0x9000000000000012
 #define TDVMCALL_EXPOSE_REGS_MASK	0xfc00
+#define HYPERV_EXPOSE_REGS_MASK		0xffffffec
 #define EXIT_REASON_IO_INSTRUCTION	30
 
 /*
@@ -172,6 +174,58 @@ SYM_FUNC_END(__tdvmcall)
 SYM_FUNC_START(__tdvmcall_vendor_kvm)
 	movq $TDVMCALL_VENDOR_KVM, %r10
 	tdvmcall_core
+SYM_FUNC_END(__tdvmcall_vendor_kvm)
+
+SYM_FUNC_START(__tdvmcall_vendor_hyperv)
+	FRAME_BEGIN
+
+	/* Save/restore non-volatile GPRs that are exposed to the VMM. */
+	push %r15
+	push %r14
+	push %r13
+	push %r12
+
+	/*
+	 * 0    => RAX = TDCALL leaf
+	 * RDI  => R8  = output address
+	 * RSI  => R9  = control value
+	 * RDX  => RDX = input address
+	 * RCX  => R12 = output address
+	 * MASK => RCX = TDVMCALL HYPERV register behavior
+	 */
+
+	xor %eax, %eax
+	mov %rdi, %r8
+	mov %rsi, %r9
+
+	/* Save output pointer to R12 */
+	mov %rcx, %r12
+	/* Allow to pass R8, R9, R10, R11, and RDX down to VMM*/
+	movl $HYPERV_EXPOSE_REGS_MASK, %ecx
+	movq $TDVMCALL_VENDOR_HYPERV, %r10
+
+	tdcall
+
+	/* Save R11 to output pointer */
+	movq %r11, (%r12)
+
+	/*
+	 * Zero out registers exposed to the VMM to avoid speculative execution
+	 * with VMM-controlled values.
+	 */
+	xor %r8d, %r8d
+	xor %r9d, %r9d
+	xor %r10d, %r10d
+	xor %r11d, %r11d
+	xor %r12d, %r12d
+
+	pop %r12
+	pop %r13
+	pop %r14
+	pop %r15
+
+	FRAME_END
+	ret
 SYM_FUNC_END(__tdvmcall_vendor_kvm)
 
 SYM_FUNC_START(tdg_outb)

@@ -120,6 +120,7 @@ void __putstr(const char *s)
 		}
 	}
 
+#if 0
 	if (lines == 0 || cols == 0)
 		return;
 
@@ -153,6 +154,7 @@ void __putstr(const char *s)
 	outb(0xff & (pos >> 9), vidport+1);
 	outb(15, vidport);
 	outb(0xff & (pos >> 1), vidport+1);
+#endif
 }
 
 void __puthex(unsigned long value)
@@ -364,8 +366,10 @@ asmlinkage __visible void *extract_kernel(void *rmode, memptr heap,
 		vidport = 0x3d4;
 	}
 
+#if 0
 	lines = boot_params->screen_info.orig_video_lines;
 	cols = boot_params->screen_info.orig_video_cols;
+#endif
 
 	console_init();
 

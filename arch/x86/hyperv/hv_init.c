@@ -29,6 +29,8 @@
 #include <clocksource/hyperv_timer.h>
 #include <linux/highmem.h>
 
+#define D printk("%s:%d\n", __FILE__, __LINE__)
+
 int hyperv_init_cpuhp;
 u64 hv_current_partition_id = ~0ull;
 EXPORT_SYMBOL_GPL(hv_current_partition_id);
@@ -480,8 +482,6 @@ void __init hyperv_init(void)
 			kfree(ms_hyperv.ghcb_base);
 			goto clean_guest_os_id;
 		}
-
-		hv_ghcb_msr_write(HV_X64_MSR_GUEST_OS_ID, guest_id);
 	}
 
 	rdmsrl(HV_X64_MSR_HYPERCALL, hypercall_msr.as_uint64);
@@ -658,8 +658,11 @@ bool hv_is_hyperv_initialized(void)
 	 * Ensure that we're really on Hyper-V, and not a KVM or Xen
 	 * emulation of Hyper-V
 	 */
-	if (x86_hyper_type != X86_HYPER_MS_HYPERV)
+	if (x86_hyper_type != X86_HYPER_MS_HYPERV) {
+		D;
+		return true;
 		return false;
+	}
 
 	/*
 	 * Verify that earlier initialization succeeded by checking
@@ -667,6 +670,10 @@ bool hv_is_hyperv_initialized(void)
 	 */
 	hypercall_msr.as_uint64 = 0;
 	rdmsrl(HV_X64_MSR_HYPERCALL, hypercall_msr.as_uint64);
+
+	if (!hypercall_msr.enable)
+		D;
+	return true;
 
 	return hypercall_msr.enable;
 }

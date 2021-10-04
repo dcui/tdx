@@ -26,7 +26,7 @@ struct pci_filter_node {
 };
 
 static struct device_filter_node dnode = { .filter = tdg_device_filter };
-static bool tdg_disable_filter;
+static bool tdg_disable_filter = true;
 
 static struct filter_node fnodes[] = {
 	{
@@ -302,7 +302,7 @@ void __init tdg_filter_init(void)
 						      "tdx_disable_filter");
 
 	/* Consider tdg_disable_filter only in TDX debug mode */
-	if (tdg_debug_enabled() && tdg_disable_filter) {
+	if (/* tdg_debug_enabled() && */ tdg_disable_filter) {
 		pr_info("Disabled TDX guest filter support\n");
 		return;
 	}

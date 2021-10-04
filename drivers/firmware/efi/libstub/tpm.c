@@ -62,6 +62,8 @@ void efi_retrieve_tpm2_eventlog(void)
 	efi_tcg2_protocol_t *tcg2_protocol = NULL;
 	int final_events_size = 0;
 
+	return;
+
 	status = efi_bs_call(locate_protocol, &tcg2_guid, NULL,
 			     (void **)&tcg2_protocol);
 	if (status != EFI_SUCCESS)

@@ -23,7 +23,6 @@
 #include <linux/bitops.h>
 #include <linux/cpumask.h>
 #include <asm/ptrace.h>
-#include <asm/mshyperv.h>
 #include <asm/hyperv-tlfs.h>
 
 struct ms_hyperv_info {
@@ -103,11 +102,7 @@ static inline void vmbus_signal_eom(struct hv_message *msg, u32 old_msg_type)
 		 * possibly deliver another msg from the
 		 * hypervisor
 		 */
-		if (hv_isolation_type_snp() &&
-		    old_msg_type != HVMSG_TIMER_EXPIRED)
-			hv_signal_eom_ghcb();
-		else
-			hv_signal_eom();
+		hv_signal_eom();
 	}
 }
 

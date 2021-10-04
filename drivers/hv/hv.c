@@ -60,13 +60,7 @@ int hv_post_message(union hv_connection_id connection_id,
 	aligned_msg->payload_size = payload_size;
 	memcpy((void *)aligned_msg->payload, payload, payload_size);
 
-	if (hv_isolation_type_snp())
-		status = hv_ghcb_hypercall(HVCALL_POST_MESSAGE,
-				(void *)aligned_msg, NULL,
-				sizeof(struct hv_input_post_message));
-	else
-		status = hv_do_hypercall(HVCALL_POST_MESSAGE,
-				aligned_msg, NULL);
+	status = hv_do_hypercall(HVCALL_POST_MESSAGE, aligned_msg, NULL);
 
 	/* Preemption must remain disabled until after the hypercall
 	 * so some other thread can't get scheduled onto this cpu and
@@ -100,6 +94,8 @@ int hv_synic_alloc(void)
 	}
 
 	for_each_present_cpu(cpu) {
+		u64 pfns[3];
+
 		hv_cpu = per_cpu_ptr(hv_context.cpu_context, cpu);
 
 		tasklet_init(&hv_cpu->msg_dpc,
@@ -123,6 +119,11 @@ int hv_synic_alloc(void)
 			pr_err("Unable to allocate post msg page\n");
 			goto err;
 		}
+
+		pfns[0] = __pa(hv_cpu->post_msg_page) >> PAGE_SHIFT;
+		pfns[1] = __pa(hv_cpu->synic_message_page) >> PAGE_SHIFT;
+		pfns[2] = __pa(hv_cpu->synic_event_page) >> PAGE_SHIFT;
+		hv_mark_gpa_visibility(3, pfns, VMBUS_PAGE_VISIBLE_READ_WRITE);
 	}
 
 	return 0;
@@ -140,8 +141,14 @@ void hv_synic_free(void)
 	int cpu;
 
 	for_each_present_cpu(cpu) {
+		u64 pfns[3];
 		struct hv_per_cpu_context *hv_cpu
 			= per_cpu_ptr(hv_context.cpu_context, cpu);
+
+		pfns[0] = __pa(hv_cpu->post_msg_page) >> PAGE_SHIFT;
+		pfns[1] = __pa(hv_cpu->synic_message_page) >> PAGE_SHIFT;
+		pfns[2] = __pa(hv_cpu->synic_event_page) >> PAGE_SHIFT;
+		hv_mark_gpa_visibility(3, pfns, VMBUS_PAGE_NOT_VISIBLE);
 
 		free_page((unsigned long)hv_cpu->synic_event_page);
 		free_page((unsigned long)hv_cpu->synic_message_page);
@@ -167,66 +174,35 @@ void hv_synic_enable_regs(unsigned int cpu)
 	union hv_synic_sint shared_sint;
 	union hv_synic_scontrol sctrl;
 
-	/* Setup Synic pages for CVM */
-	if (hv_isolation_type_snp()) {
-		hv_get_simp_ghcb(&simp.as_uint64);
-		simp.simp_enabled = 1;
+	/* Setup the Synic's message page */
+	hv_get_simp(simp.as_uint64);
+	simp.simp_enabled = 1;
+	simp.base_simp_gpa = virt_to_phys(hv_cpu->synic_message_page)
+		>> HV_HYP_PAGE_SHIFT;
 
-		hv_cpu->synic_message_page
-			= ioremap_cache(simp.base_simp_gpa << PAGE_SHIFT,
-					PAGE_SIZE);
-		hv_set_simp_ghcb(simp.as_uint64);
+	hv_set_simp(simp.as_uint64);
 
-		hv_get_siefp_ghcb(&siefp.as_uint64);
-		siefp.siefp_enabled = 1;
-		hv_cpu->synic_event_page
-			= ioremap_cache(siefp.base_siefp_gpa << PAGE_SHIFT,
-					PAGE_SIZE);
-		hv_set_siefp_ghcb(siefp.as_uint64);
+	/* Setup the Synic's event page */
+	hv_get_siefp(siefp.as_uint64);
+	siefp.siefp_enabled = 1;
+	siefp.base_siefp_gpa = virt_to_phys(hv_cpu->synic_event_page)
+		>> HV_HYP_PAGE_SHIFT;
 
-		hv_get_synint_state_ghcb(VMBUS_MESSAGE_SINT,
-					 &shared_sint.as_uint64);
+	hv_set_siefp(siefp.as_uint64);
 
-		shared_sint.vector = HYPERVISOR_CALLBACK_VECTOR;
-		shared_sint.masked = false;
-		shared_sint.auto_eoi = hv_recommend_using_aeoi();
-		hv_set_synint_state_ghcb(VMBUS_MESSAGE_SINT,
-					 shared_sint.as_uint64);
+	/* Setup the shared SINT. */
+	hv_get_synint_state(VMBUS_MESSAGE_SINT, shared_sint.as_uint64);
 
-		hv_get_synic_state_ghcb(&sctrl.as_uint64);
-		sctrl.enable = 1;
-		hv_set_synic_state_ghcb(sctrl.as_uint64);
-	} else {
-		/* Setup the Synic's message. */
-		hv_get_simp(simp.as_uint64);
-		simp.simp_enabled = 1;
-		simp.base_simp_gpa = virt_to_phys(hv_cpu->synic_message_page)
-			>> HV_HYP_PAGE_SHIFT;
+	shared_sint.vector = hv_get_vector();
+	shared_sint.masked = false;
+	shared_sint.auto_eoi = hv_recommend_using_aeoi();
+	hv_set_synint_state(VMBUS_MESSAGE_SINT, shared_sint.as_uint64);
 
-		hv_set_simp(simp.as_uint64);
+	/* Enable the global synic bit */
+	hv_get_synic_state(sctrl.as_uint64);
+	sctrl.enable = 1;
 
-		/* Setup the Synic's event page */
-		hv_get_siefp(siefp.as_uint64);
-		siefp.siefp_enabled = 1;
-		siefp.base_siefp_gpa = virt_to_phys(hv_cpu->synic_event_page)
-			>> HV_HYP_PAGE_SHIFT;
-
-		hv_set_siefp(siefp.as_uint64);
-
-		/* Setup the shared SINT. */
-		hv_get_synint_state(VMBUS_MESSAGE_SINT, shared_sint.as_uint64);
-
-		shared_sint.vector = HYPERVISOR_CALLBACK_VECTOR;
-		shared_sint.masked = false;
-		shared_sint.auto_eoi = hv_recommend_using_aeoi();
-		hv_set_synint_state(VMBUS_MESSAGE_SINT, shared_sint.as_uint64);
-
-		/* Enable the global synic bit */
-		hv_get_synic_state(sctrl.as_uint64);
-		sctrl.enable = 1;
-
-		hv_set_synic_state(sctrl.as_uint64);
-	}
+	hv_set_synic_state(sctrl.as_uint64);
 }
 
 int hv_synic_init(unsigned int cpu)
@@ -248,54 +224,30 @@ void hv_synic_disable_regs(unsigned int cpu)
 	union hv_synic_siefp siefp;
 	union hv_synic_scontrol sctrl;
 
-	if (hv_isolation_type_snp()) {
-		hv_get_synint_state_ghcb(VMBUS_MESSAGE_SINT,
-					 &shared_sint.as_uint64);
-		shared_sint.masked = 1;
-		hv_set_synint_state_ghcb(VMBUS_MESSAGE_SINT,
-					 shared_sint.as_uint64);
+	hv_get_synint_state(VMBUS_MESSAGE_SINT, shared_sint.as_uint64);
 
-		hv_get_simp_ghcb(&simp.as_uint64);
-		simp.simp_enabled = 0;
-		simp.base_simp_gpa = 0;
-		hv_set_simp_ghcb(simp.as_uint64);
+	shared_sint.masked = 1;
 
-		hv_get_siefp_ghcb(&siefp.as_uint64);
-		siefp.siefp_enabled = 0;
-		siefp.base_siefp_gpa = 0;
+	/* Need to correctly cleanup in the case of SMP!!! */
+	/* Disable the interrupt */
+	hv_set_synint_state(VMBUS_MESSAGE_SINT, shared_sint.as_uint64);
 
-		hv_set_siefp_ghcb(siefp.as_uint64);
+	hv_get_simp(simp.as_uint64);
+	simp.simp_enabled = 0;
+	simp.base_simp_gpa = 0;
 
-		/* Disable the global synic bit */
-		hv_get_synic_state_ghcb(&sctrl.as_uint64);
-		sctrl.enable = 0;
-		hv_set_synic_state_ghcb(sctrl.as_uint64);
-	} else {
-		hv_get_synint_state(VMBUS_MESSAGE_SINT, shared_sint.as_uint64);
+	hv_set_simp(simp.as_uint64);
 
-		shared_sint.masked = 1;
+	hv_get_siefp(siefp.as_uint64);
+	siefp.siefp_enabled = 0;
+	siefp.base_siefp_gpa = 0;
 
-		/* Need to correctly cleanup in the case of SMP!!! */
-		/* Disable the interrupt */
-		hv_set_synint_state(VMBUS_MESSAGE_SINT, shared_sint.as_uint64);
+	hv_set_siefp(siefp.as_uint64);
 
-		hv_get_simp(simp.as_uint64);
-		simp.simp_enabled = 0;
-		simp.base_simp_gpa = 0;
-
-		hv_set_simp(simp.as_uint64);
-
-		hv_get_siefp(siefp.as_uint64);
-		siefp.siefp_enabled = 0;
-		siefp.base_siefp_gpa = 0;
-
-		hv_set_siefp(siefp.as_uint64);
-
-		/* Disable the global synic bit */
-		hv_get_synic_state(sctrl.as_uint64);
-		sctrl.enable = 0;
-		hv_set_synic_state(sctrl.as_uint64);
-	}
+	/* Disable the global synic bit */
+	hv_get_synic_state(sctrl.as_uint64);
+	sctrl.enable = 0;
+	hv_set_synic_state(sctrl.as_uint64);
 }
 
 int hv_synic_cleanup(unsigned int cpu)

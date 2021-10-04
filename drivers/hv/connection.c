@@ -184,6 +184,8 @@ int vmbus_connect(void)
 	__u32 version;
 	u64 pfn[2];
 
+	printk("vmbus_connect\n");
+
 	/* Initialize the vmbus connection */
 	vmbus_connection.conn_state = CONNECTING;
 	vmbus_connection.work_queue = create_workqueue("hv_vmbus_con");
@@ -223,6 +225,9 @@ int vmbus_connect(void)
 		goto cleanup;
 	}
 
+	pfn[0] = __pa(vmbus_connection.int_page) >> PAGE_SHIFT;
+	hv_mark_gpa_visibility(1, pfn, VMBUS_PAGE_VISIBLE_READ_WRITE);
+
 	vmbus_connection.recv_int_page = vmbus_connection.int_page;
 	vmbus_connection.send_int_page =
 		(void *)((unsigned long)vmbus_connection.int_page +
@@ -240,7 +245,7 @@ int vmbus_connect(void)
 		goto cleanup;
 	}
 
-	if (hv_isolation_type_snp()) {
+	if (hv_isolation_type_snp() || is_tdx_guest()) {
 		pfn[0] = virt_to_hvpfn(vmbus_connection.monitor_pages[0]);
 		pfn[1] = virt_to_hvpfn(vmbus_connection.monitor_pages[1]);
 		if (hv_mark_gpa_visibility(2, pfn,
@@ -333,6 +338,9 @@ void vmbus_disconnect(void)
 		destroy_workqueue(vmbus_connection.work_queue);
 
 	if (vmbus_connection.int_page) {
+		u64 pfn[1];
+		pfn[0] = __pa(vmbus_connection.int_page) >> PAGE_SHIFT;
+		hv_mark_gpa_visibility(1, pfn, VMBUS_PAGE_NOT_VISIBLE);
 		hv_free_hyperv_page((unsigned long)vmbus_connection.int_page);
 		vmbus_connection.int_page = NULL;
 	}
@@ -351,7 +359,8 @@ void vmbus_disconnect(void)
 				= vmbus_connection.monitor_pages_va[1];
 			vmbus_connection.monitor_pages_va[1] = NULL;
 		}
-
+	}
+	if (hv_isolation_type_snp() || is_tdx_guest()) {
 		pfn[0] = virt_to_hvpfn(vmbus_connection.monitor_pages[0]);
 		pfn[1] = virt_to_hvpfn(vmbus_connection.monitor_pages[1]);
 		hv_mark_gpa_visibility(2, pfn, VMBUS_PAGE_NOT_VISIBLE);
@@ -501,10 +510,6 @@ void vmbus_set_event(struct vmbus_channel *channel)
 
 	++channel->sig_events;
 
-	if (hv_isolation_type_snp())
-		hv_ghcb_hypercall(HVCALL_SIGNAL_EVENT, &channel->sig_event,
-				NULL, sizeof(u64));
-	else
-		hv_do_fast_hypercall8(HVCALL_SIGNAL_EVENT, channel->sig_event);
+	hv_do_fast_hypercall8(HVCALL_SIGNAL_EVENT, channel->sig_event);
 }
 EXPORT_SYMBOL_GPL(vmbus_set_event);

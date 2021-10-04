@@ -7,6 +7,8 @@
 
 #ifndef __ASSEMBLY__
 
+#include <linux/limits.h>
+
 #ifdef CONFIG_INTEL_TDX_GUEST
 
 enum tdx_map_type {
@@ -68,6 +70,7 @@ u64 __tdvmcall(u64 fn, u64 r12, u64 r13, u64 r14, u64 r15,
 	       struct tdvmcall_output *out);
 u64 __tdvmcall_vendor_kvm(u64 fn, u64 r12, u64 r13, u64 r14, u64 r15,
 			  struct tdvmcall_output *out);
+u64 __tdvmcall_vendor_hyperv(u64 r8, u64 r9, u64 rdx, u64 *r11);
 
 long tdx_kvm_hypercall0(unsigned int nr);
 long tdx_kvm_hypercall1(unsigned int nr, unsigned long p1);
@@ -76,6 +79,7 @@ long tdx_kvm_hypercall3(unsigned int nr, unsigned long p1, unsigned long p2,
 		unsigned long p3);
 long tdx_kvm_hypercall4(unsigned int nr, unsigned long p1, unsigned long p2,
 		unsigned long p3, unsigned long p4);
+u64 tdvmcall_hyperv(u64 control, u64 input_addr, u64 output_addr);
 
 bool tdg_allowed_port(short int port);
 
@@ -166,6 +170,12 @@ static inline long tdx_kvm_hypercall4(unsigned int nr, unsigned long p1,
 				      unsigned long p4)
 {
 	return -ENODEV;
+}
+
+static inline u64 tdvmcall_hyperv(u64 control, u64 input_addr,
+				  u64 output_addr)
+{
+	return U64_MAX;
 }
 
 static inline phys_addr_t tdg_shared_mask(void)

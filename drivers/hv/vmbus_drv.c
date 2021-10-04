@@ -35,6 +35,8 @@
 #include <clocksource/hyperv_timer.h>
 #include "hyperv_vmbus.h"
 
+#define D printk("%s:%d\n", __FILE__, __LINE__)
+
 struct vmbus_dynid {
 	struct list_head node;
 	struct hv_vmbus_device_id id;
@@ -901,6 +903,9 @@ static int vmbus_probe(struct device *child_device)
 	struct hv_device *dev = device_to_hv_device(child_device);
 	const struct hv_vmbus_device_id *dev_id;
 
+	printk("vmbus_probe dev_type %phN dev_instance %phN\n",
+			&dev->dev_type, &dev->dev_instance);
+
 	dev_id = hv_vmbus_get_id(drv, dev);
 	if (drv->probe) {
 		ret = drv->probe(dev, dev_id);
@@ -1472,6 +1477,8 @@ static int vmbus_bus_init(void)
 {
 	int ret;
 
+	D;
+
 	ret = hv_init();
 	if (ret != 0) {
 		pr_err("Unable to initialize the hypervisor - 0x%x\n", ret);
@@ -1479,16 +1486,22 @@ static int vmbus_bus_init(void)
 	}
 
 	ret = bus_register(&hv_bus);
-	if (ret)
+	if (ret) {
+		D;
 		return ret;
+	}
 
 	ret = hv_setup_vmbus_irq(vmbus_irq, vmbus_isr);
-	if (ret)
+	if (ret) {
+		D;
 		goto err_setup;
+	}
 
 	ret = hv_synic_alloc();
-	if (ret)
+	if (ret) {
+		D;
 		goto err_alloc;
+	}
 
 	/*
 	 * Initialize the per-cpu interrupt state and stimer state.
@@ -1496,13 +1509,18 @@ static int vmbus_bus_init(void)
 	 */
 	ret = cpuhp_setup_state(CPUHP_AP_ONLINE_DYN, "hyperv/vmbus:online",
 				hv_synic_init, hv_synic_cleanup);
-	if (ret < 0)
+	if (ret < 0) {
+		D;
 		goto err_cpuhp;
+	}
 	hyperv_cpuhp_online = ret;
 
+	D;
 	ret = vmbus_connect();
-	if (ret)
+	if (ret) {
+		D;
 		goto err_connect;
+	}
 
 	/*
 	 * Only register if the crash MSRs are available
@@ -1536,7 +1554,11 @@ static int vmbus_bus_init(void)
 	atomic_notifier_chain_register(&panic_notifier_list,
 			       &hyperv_panic_block);
 
+
 	vmbus_request_offers();
+
+	D;
+
 
 	return 0;
 
@@ -2373,11 +2395,15 @@ static int vmbus_acpi_add(struct acpi_device *device)
 
 	hv_acpi_dev = device;
 
+	D;
+
 	result = acpi_walk_resources(device->handle, METHOD_NAME__CRS,
 					vmbus_walk_resources, NULL);
 
-	if (ACPI_FAILURE(result))
+	if (ACPI_FAILURE(result)) {
+		D;
 		goto acpi_walk_err;
+	}
 	/*
 	 * Some ancestor of the vmbus acpi device (Gen1 or Gen2
 	 * firmware) is the VMOD that has the mmio ranges. Get that.
@@ -2399,6 +2425,7 @@ acpi_walk_err:
 	complete(&probe_event);
 	if (ret_val)
 		vmbus_acpi_remove(device);
+	D;
 	return ret_val;
 }
 
@@ -2642,11 +2669,16 @@ static int __init hv_acpi_init(void)
 {
 	int ret, t;
 
-	if (!hv_is_hyperv_initialized())
+	D;
+	if (!hv_is_hyperv_initialized()) {
+		D;
 		return -ENODEV;
+	}
 
-	if (hv_root_partition)
+	if (hv_root_partition) {
+		D;
 		return 0;
+	}
 
 	init_completion(&probe_event);
 
@@ -2655,12 +2687,15 @@ static int __init hv_acpi_init(void)
 	 */
 	ret = acpi_bus_register_driver(&vmbus_acpi_driver);
 
-	if (ret)
+	if (ret) {
+		D;
 		return ret;
+	}
 
 	t = wait_for_completion_timeout(&probe_event, 5*HZ);
 	if (t == 0) {
 		ret = -ETIMEDOUT;
+		D;
 		goto cleanup;
 	}
 	hv_debug_init();

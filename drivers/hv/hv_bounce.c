@@ -172,8 +172,9 @@ static void hv_bounce_page_list_free(struct vmbus_channel *channel,
 		if (hv_isolation_type_snp()) {
 			vunmap((void *)bounce_page->bounce_va);
 			free_page(bounce_page->bounce_original_va);
-		} else
+		} else {
 			free_page(bounce_page->bounce_va);
+		}
 
 		kmem_cache_free(channel->bounce_page_cache, bounce_page);
 	}
@@ -192,6 +193,7 @@ static int hv_bounce_page_list_alloc(struct vmbus_channel *channel, u32 count)
 	unsigned long va = 0;
 
 	INIT_LIST_HEAD(&head);
+	printk("hv_bounce_page_list_alloc %d\n", count);
 	for (p = 0; p < count; p++) {
 		struct hv_bounce_page_list *bounce_page;
 
@@ -423,7 +425,7 @@ int hv_bounce_resources_reserve(struct vmbus_channel *channel,
 	channel->min_bounce_resource_count = round_up_count;
 	spin_unlock_irqrestore(&channel->bp_lock, flags);
 	ret = hv_bounce_pkt_list_alloc(channel, round_up_count);
-	if (ret < 0)
+	if (WARN_ON(ret < 0))
 		return ret;
 	return hv_bounce_page_list_alloc(channel, round_up_count);
 }
@@ -614,7 +616,8 @@ EXPORT_SYMBOL_GPL(hv_pkt_bounce);
 
 int hv_init_channel_ivm(struct vmbus_channel *channel)
 {
-	if (!hv_partition_is_isolated())
+	printk("hv_init_channel_ivm\n");
+	if (WARN_ON(!hv_partition_is_isolated()))
 		return 0;
 
 	/*

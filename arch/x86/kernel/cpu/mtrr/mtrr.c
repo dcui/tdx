@@ -686,6 +686,8 @@ int __initdata changed_by_mtrr_cleanup;
  */
 void __init mtrr_bp_init(void)
 {
+	return;
+
 	u32 phys_addr;
 
 	init_ifs();

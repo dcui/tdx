@@ -9,6 +9,7 @@
 #include <asm/hyperv-tlfs.h>
 #include <asm/nospec-branch.h>
 #include <asm/paravirt.h>
+#include <asm/tdx.h>
 
 typedef int (*hyperv_fill_flush_list_func)(
 		struct hv_guest_mapping_flush_list *flush,
@@ -54,7 +55,7 @@ typedef int (*hyperv_fill_flush_list_func)(
 #define hv_enable_vdso_clocksource() \
 	vclocks_set_used(VDSO_CLOCKMODE_HVCLOCK);
 #define hv_get_raw_timer() rdtsc_ordered()
-#define hv_get_vector() HYPERVISOR_CALLBACK_VECTOR
+#define hv_get_vector() HYPERV_CALLBACK_VECTOR2
 
 /*
  * Reference to pv_ops must be inline so objtool
@@ -96,6 +97,9 @@ static inline u64 hv_do_hypercall(u64 control, void *input, void *output)
 	if (!hv_hypercall_pg)
 		return U64_MAX;
 
+	if (is_tdx_guest())
+		return tdvmcall_hyperv(control, input_address, output_address);
+
 	__asm__ __volatile__("mov %4, %%r8\n"
 			     CALL_NOSPEC
 			     : "=a" (hv_status), ASM_CALL_CONSTRAINT,
@@ -130,6 +134,8 @@ static inline u64 hv_do_fast_hypercall8(u16 code, u64 input1)
 	u64 hv_status, control = (u64)code | HV_HYPERCALL_FAST_BIT;
 
 #ifdef CONFIG_X86_64
+	if (is_tdx_guest())
+		return tdvmcall_hyperv(control, input1, 0);
 	{
 		__asm__ __volatile__(CALL_NOSPEC
 				     : "=a" (hv_status), ASM_CALL_CONSTRAINT,
@@ -161,6 +167,9 @@ static inline u64 hv_do_fast_hypercall16(u16 code, u64 input1, u64 input2)
 	u64 hv_status, control = (u64)code | HV_HYPERCALL_FAST_BIT;
 
 #ifdef CONFIG_X86_64
+	if (is_tdx_guest())
+		return tdvmcall_hyperv(control, input1, input2);
+
 	{
 		__asm__ __volatile__("mov %4, %%r8\n"
 				     CALL_NOSPEC
@@ -270,27 +279,6 @@ int hv_map_ioapic_interrupt(int ioapic_id, bool level, int vcpu, int vector,
 int hv_unmap_ioapic_interrupt(int ioapic_id, struct hv_interrupt_entry *entry);
 
 int hv_mark_gpa_visibility(u16 count, const u64 pfn[], u32 visibility);
-void hv_sint_wrmsrl_ghcb(u64 msr, u64 value);
-void hv_sint_rdmsrl_ghcb(u64 msr, u64 *value);
-void hv_signal_eom_ghcb(void);
-void hv_ghcb_msr_write(u64 msr, u64 value);
-void hv_ghcb_msr_read(u64 msr, u64 *value);
-inline bool hv_partition_is_isolated(void);
-inline bool hv_isolation_type_snp(void);
-u64 hv_ghcb_hypercall(u64 control, void *input, void *output, u32 input_size);
-#define hv_get_synint_state_ghcb(int_num, val)			\
-	hv_sint_rdmsrl_ghcb(HV_X64_MSR_SINT0 + int_num, val)
-#define hv_set_synint_state_ghcb(int_num, val) \
-	hv_sint_wrmsrl_ghcb(HV_X64_MSR_SINT0 + int_num, val)
-
-#define hv_get_simp_ghcb(val) hv_sint_rdmsrl_ghcb(HV_X64_MSR_SIMP, val)
-#define hv_set_simp_ghcb(val) hv_sint_wrmsrl_ghcb(HV_X64_MSR_SIMP, val)
-
-#define hv_get_siefp_ghcb(val) hv_sint_rdmsrl_ghcb(HV_X64_MSR_SIEFP, val)
-#define hv_set_siefp_ghcb(val) hv_sint_wrmsrl_ghcb(HV_X64_MSR_SIEFP, val)
-
-#define hv_get_synic_state_ghcb(val) hv_sint_rdmsrl_ghcb(HV_X64_MSR_SCONTROL, val)
-#define hv_set_synic_state_ghcb(val) hv_sint_wrmsrl_ghcb(HV_X64_MSR_SCONTROL, val)
 #else /* CONFIG_HYPERV */
 static inline void hyperv_init(void) {}
 static inline void hyperv_setup_mmu_ops(void) {}
@@ -309,9 +297,21 @@ static inline int hyperv_flush_guest_mapping_range(u64 as,
 {
 	return -1;
 }
-static inline void hv_signal_eom_ghcb(void) { };
 #endif /* CONFIG_HYPERV */
 
+
 #include <asm-generic/mshyperv.h>
+
+static inline bool hv_partition_is_isolated(void)
+{
+	if (is_tdx_guest())
+		return true;
+	return (ms_hyperv.partition_flags & HV_X64_PARTITION_ISOLATION);
+}
+
+static inline bool hv_isolation_type_snp(void)
+{
+	return (ms_hyperv.cvm_flag & HV_X64_PARTITION_ISOLATION_SNP);
+}
 
 #endif

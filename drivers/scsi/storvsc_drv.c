@@ -871,6 +871,8 @@ static int storvsc_channel_init(struct hv_device *device, bool is_fc)
 	int max_chns;
 	bool process_sub_channels = false;
 
+	printk("storvsc_channel_init\n");
+
 	stor_device = get_out_stor_device(device);
 	if (!stor_device)
 		return -ENODEV;
@@ -975,6 +977,7 @@ static int storvsc_channel_init(struct hv_device *device, bool is_fc)
 	 * operations under low memory conditions, that cannot rely on
 	 * additional resources to be allocated.
 	 */
+	printk("calling hv_bounce_resources_reserve\n");
 	ret =  hv_bounce_resources_reserve(device->channel,
 			stor_device->max_transfer_bytes * 20);
 	if (ret < 0)
@@ -1945,6 +1948,8 @@ static int storvsc_probe(struct hv_device *device,
 	int max_targets;
 	int max_channels;
 	int max_sub_channels = 0;
+
+	printk("storvsc_probe\n");
 
 	/*
 	 * Based on the windows host we are running on,
