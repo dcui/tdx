@@ -193,24 +193,26 @@ void check_hv_pending(struct pt_regs *regs)
 	if (!sev_snp_active())
 		return;
 
-	if (regs && (regs->flags & X86_EFLAGS_IF) == 0)
-		return;
+	if (regs) {
+		if ((regs->flags & X86_EFLAGS_IF) == 0)
+			return;
+		asm volatile("sti": : :"memory");
+	
 
-	asm volatile("sti": : :"memory");
-
-	if (!this_cpu_read(hv_pending))
-		return;
-
-	if (regs == NULL) {
-		memset(&local_regs, 0, sizeof(struct pt_regs));
-		regs = &local_regs;
-		regs->cs = 0x10;
-		regs->ss = 0x18;
-		regs->orig_ax = -1;
-		regs->flags = native_save_fl();
+		if (!this_cpu_read(hv_pending))
+			return;
+		do_exc_hv(regs);
+	} else { 		
+		if (this_cpu_read(hv_pending)) {
+			memset(&local_regs, 0, sizeof(struct pt_regs));
+			regs = &local_regs;
+			regs->cs = 0x10;
+			regs->ss = 0x18;
+			regs->orig_ax = -1;
+			regs->flags = native_save_fl();
+			do_exc_hv(regs);
+		}
 	}
-
-	do_exc_hv(regs);
 }
 EXPORT_SYMBOL_GPL(check_hv_pending);
 

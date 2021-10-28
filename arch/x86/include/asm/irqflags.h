@@ -42,15 +42,15 @@ extern __always_inline unsigned long native_save_fl(void)
 extern inline void native_restore_fl(unsigned long flags);
 extern inline void native_restore_fl(unsigned long flags)
 {
+	asm volatile("push %0 ; popf"
+		     : /* no output */
+		     :"g" (flags)
+		     :"memory", "cc");
 #ifdef CONFIG_AMD_MEM_ENCRYPT
 	if ((flags & X86_EFLAGS_IF)) {
 		check_hv_pending(NULL);
 	}
 #endif
-	asm volatile("push %0 ; popf"
-		     : /* no output */
-		     :"g" (flags)
-		     :"memory", "cc");
 }
 
 static __always_inline void native_irq_disable(void)
@@ -60,10 +60,10 @@ static __always_inline void native_irq_disable(void)
 
 static __always_inline void native_irq_enable(void)
 {
+	asm volatile("sti": : :"memory");
 #ifdef CONFIG_AMD_MEM_ENCRYPT
 	check_hv_pending(NULL);
 #endif
-	asm volatile("sti": : :"memory");
 }
 
 static inline __cpuidle void native_safe_halt(void)
