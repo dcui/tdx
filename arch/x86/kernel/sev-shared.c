@@ -47,7 +47,7 @@ static bool lookup_cpuid_page(struct pt_regs *regs)
 	bool found = false;
 	int i;
 
-	if (eax_in < 0xd)
+	if (eax_in < 0xb)
 		ecx_in = 0;
 
 #ifdef __BOOT_COMPRESSED
