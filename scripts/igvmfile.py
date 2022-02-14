@@ -265,6 +265,8 @@ class setup_header(Structure):
 
 assert sizeof(setup_header) == 0x77
 
+ACPI_END_ADDR = 0x200000
+
 E820_TYPE_RAM           = 1
 E820_TYPE_RESERVED      = 2
 E820_TYPE_ACPI          = 3
@@ -1223,6 +1225,19 @@ class VMState(object):
             self.regs.efer.LMA = 1
             self.regs.efer.NXE = 1
 
+    def setup_acpi(self):
+        # [0-0xa0000] is reserved for BIOS
+        # [0xe0000 - 0x200000] is for ACPI related data
+        # load ACPI pages
+        acpi = pickle.loads(zlib.decompress(base64.b64decode(ACPI)))
+        sorted_gpa = list(acpi.keys())
+        sorted_gpa.sort()
+        for gpa in sorted_gpa:
+            assert(gpa < ACPI_END_ADDR)
+            self.seek(gpa)
+            self.memory.allocate(PGSIZE)
+            self.memory.write(gpa, acpi[gpa]) 
+
     def setup_real(self):
         '''
         Setup registers for real-mode execution.
@@ -1623,35 +1638,94 @@ class IGVMFile(VMState):
         headers[0].TotalFileSize = offset
         return b''.join([bytearray(h) for h in headers]) + body
 
+
+""" Memory Layout
+|------|-------|**----|*---|***---|*******0-------0|****----|
+  BIOS  RESVD  ACPI   VMSA  cpuids   vmlinux      boot_params
+                            secrets               command
+                            params                ramdisk
+*: data imported and measured 
+0: memory required used before long mode
+
+HV should launch_update some empty pages since
+1. startup_32 uses boot_stack(unrelocated) and pgtable(relocated)
+2. pvalidate must run after jumping to long mode (startup_64)
+See more details in arch/x86/boot/compressed/head_64.S
+  |<-----------vmlinux.bin-------->|
+A:|*********|*******|**************|------|0000|-------|--------------|
+ start_32  start_64  compressed   heap  stack pgtable _end
+  |<-------------------------------init_size ------------------------>|
+
+B:|-------------|---------------------------------------------|0000000|
+                |<-----------vmlinux.bin-------->|          pgtable  _end
+
+startup_32 accesses boot_stack based on the original layout A;
+startup_32 sets up pgtable using future layout B.
+"""
+BOOT_HEAP_SIZE = 0x10000
+BOOT_STACK_SIZE = 0x4000
+BOOT_PGT_SIZE = 0x6000
+TOP_PGT_SIZE = 0x1000
+INIT_PGTABLE_SIZE = TOP_PGT_SIZE + BOOT_PGT_SIZE
+
+
 def load_kernel(kernel, cmdline, ramdisk, vtl, config, sign_key):
     assert type(kernel) is bytearray
     assert type(cmdline) is bytearray
     assert type(ramdisk) is bytearray
     state = IGVMFile(config, sign_key)
-    state.memory.allocate(0x200000) # [0-2MB) for ACPI-related data
-    state.memory.allocate(PGSIZE) # VMSA page
+    state.setup_acpi()
+    # VMSA page at 0x200000
+    state.seek(ACPI_END_ADDR)
+    vmsa_page = state.memory.allocate(PGSIZE)  # VMSA page
+
+    # for CPUID/secrets/param pages
     state.seek(0x800000)
-    state.memory.allocate(3 * PGSIZE) # for CPUID/secrets/param pages
+    cpuid_page = state.memory.allocate(PGSIZE)
+    secrets_page = state.memory.allocate(PGSIZE)
+    param_page = state.memory.allocate(PGSIZE)
+    # Parse BzImage header
     header = setup_header.from_buffer(kernel, 0x1f1)
-    assert header.header.to_bytes(4, 'little') == b'HdrS', 'invalid setup_header'
+    assert header.header.to_bytes(
+        4, 'little') == b'HdrS', 'invalid setup_header'
     assert header.pref_address > 3 * 1024 * 1024, 'loading base cannot be below 3MB'
     assert header.xloadflags & 1, '64-bit entrypoint does not exist'
     assert header.pref_address % PGSIZE == 0
     assert header.init_size % PGSIZE == 0
-    kernel_start = (header.setup_sects + 1) * 512
-    assert kernel_start < len(kernel)
-    state.seek(header.pref_address)
-    kernel_base = state.memory.allocate(header.init_size)
-    state.memory.write(kernel_base, kernel[kernel_start:kernel_start + header.init_size])
-    kernel_entry = kernel_base
+    # Skip setup code in real mode
+    vmlinux_bin_start = (header.setup_sects + 1) * 512
+    assert vmlinux_bin_start < len(kernel)
+    # compressed/vmlinux at header.pref_address
+    kernel_base = header.pref_address
+    kernel_size = header.syssize * 0x10
+    kernel_size = int((kernel_size + PGSIZE - 1) / PGSIZE) * PGSIZE
+    state.seek(kernel_base)
+    kernel_base = state.memory.allocate(kernel_size)
+    vmlinux_bin = kernel[vmlinux_bin_start:]
+    state.memory.write(kernel_base, vmlinux_bin)
+    kernel_end = state.memory.allocate(0)
+
+    # Allocate BOOT_STACK
+    boot_stack_addr = kernel_end + BOOT_HEAP_SIZE
+    state.seek(boot_stack_addr)
+    state.memory.allocate(BOOT_STACK_SIZE)
+
+    # Allocate pgtable
+    pgtable_addr = kernel_base + header.init_size - INIT_PGTABLE_SIZE
+    state.seek(pgtable_addr)
+    state.memory.allocate(INIT_PGTABLE_SIZE)
+    init_end = header.pref_address + header.init_size
+    state.seek(init_end)
+
     # setup architectural env (no paging is needed for 32-bit)
     state.setup_gdt()
     # allocate boot_params, cmdline and ramdisk pages
-    params_page = state.memory.allocate(PGSIZE, PGSIZE)
-    cmdline_page = state.memory.allocate(PGSIZE, PGSIZE)
+    params_page = state.memory.allocate(sizeof(boot_params), 8)
+    cmdline_page = state.memory.allocate(len(cmdline), 8)
     ramdisk_pages = state.memory.allocate(len(ramdisk), PGSIZE)
     end = state.memory.allocate(0, PGSIZE)
     # initialize boot_params
+    kernel_entry = kernel_base
     params = boot_params.from_buffer(state.memory, params_page)
     params.hdr = header
     params.hdr.code32_start = kernel_base
@@ -1664,31 +1738,37 @@ def load_kernel(kernel, cmdline, ramdisk, vtl, config, sign_key):
     params.hdr.ramdisk_size = len(ramdisk)
     params.acpi_rsdp_addr = 0xe0000
     # give 1GB to the kernel
-    params.e820_entries = 5
+    params.e820_entries = 8
     params.e820_table[0].addr = 0
-    params.e820_table[0].size = 0xa0000
+    params.e820_table[0].size = 0
     params.e820_table[0].type = E820_TYPE_RAM
     params.e820_table[1].addr = 0xa0000
     params.e820_table[1].size = 0x100000 - 0xa0000
     params.e820_table[1].type = E820_TYPE_RESERVED
     params.e820_table[2].addr = 0x100000
-    params.e820_table[2].size = 0x100000
+    params.e820_table[2].size = ACPI_END_ADDR - 0x100000
     params.e820_table[2].type = E820_TYPE_ACPI
-    params.e820_table[3].addr = 0x200000
+    params.e820_table[3].addr = ACPI_END_ADDR
     params.e820_table[3].size = 0x100000
     params.e820_table[3].type = E820_TYPE_RESERVED
     params.e820_table[4].addr = header.pref_address
-    params.e820_table[4].size = end - header.pref_address
+    params.e820_table[4].size = kernel_size
     params.e820_table[4].type = E820_TYPE_RAM
-    del params # kill reference to re-allow allocation
+    params.e820_table[5].addr = boot_stack_addr
+    params.e820_table[5].size = BOOT_STACK_SIZE
+    params.e820_table[5].type = E820_TYPE_RAM
+    params.e820_table[6].addr = pgtable_addr
+    params.e820_table[6].size = INIT_PGTABLE_SIZE
+    params.e820_table[6].type = E820_TYPE_RAM
+    params.e820_table[7].addr = init_end
+    params.e820_table[7].size = end - init_end
+    params.e820_table[7].type = E820_TYPE_RAM
+    del params  # kill reference to re-allow allocation
     # update initial registers
     state.regs.rip.value = kernel_entry
     state.regs.rsi.value = params_page
-    # load ACPI pages
-    acpi = pickle.loads(zlib.decompress(base64.b64decode(ACPI)))
-    for gpa in acpi:
-        state.memory.write(gpa, acpi[gpa])
-    return state.raw(0x200000, 0x800000, 0x801000, 0x802000, vtl)
+    return state.raw(vmsa_page, cpuid_page, secrets_page, param_page, vtl)
+
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
