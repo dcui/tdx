@@ -885,6 +885,21 @@ static int vmbus_probe(struct device *child_device)
 			drv_to_hv_drv(child_device->driver);
 	struct hv_device *dev = device_to_hv_device(child_device);
 	const struct hv_vmbus_device_id *dev_id;
+	enum dev_dma_attr coherent;
+
+	/*
+	 * On ARM64, propagate the DMA coherence setting from the top level
+	 * VMbus ACPI device to the child VMbus device being added here.
+	 * Older Hyper-V ARM64 versions don't set the _CCA method on the
+	 * top level VMbus ACPI device as they should.  Treat these cases
+	 * as DMA coherent since that's the assumption made by Hyper-V.
+	 *
+	 * On x86/x64 these calls assume coherence and have no effect.
+	 */
+	coherent = acpi_get_dma_attr(hv_acpi_dev);
+	if (coherent == DEV_DMA_NOT_SUPPORTED)
+		coherent = DEV_DMA_COHERENT;
+	acpi_dma_configure(child_device, coherent);
 
 	dev_id = hv_vmbus_get_id(drv, dev);
 	if (drv->probe) {
