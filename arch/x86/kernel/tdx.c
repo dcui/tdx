@@ -247,6 +247,8 @@ static void tdg_get_info(void)
 	physical_mask &= ~tdg_shared_mask();
 }
 
+bool tdx_switch = false;
+
 static int __tdg_map_gpa(phys_addr_t gpa, int numpages,
 			 enum tdx_map_type map_type)
 {
@@ -256,6 +258,9 @@ static int __tdg_map_gpa(phys_addr_t gpa, int numpages,
 		gpa |= tdg_shared_mask();
 
 	ret = tdvmcall(TDVMCALL_MAP_GPA, gpa, PAGE_SIZE * numpages, 0, 0);
+
+	if (ret)
+		pr_info("tdx hvcall return error %d\n", ret);
 	return ret ? -EIO : 0;
 }
 
@@ -265,12 +270,20 @@ static void tdg_accept_page(phys_addr_t gpa)
 
 	ret = __tdcall(TDACCEPTPAGE, gpa, 0, NULL);
 
+	if (tdx_switch)
+		pr_info("tdx accept page ret %llx llx.\n", gpa, ret);
+
 	BUG_ON(ret && ret != TDX_PAGE_ALREADY_ACCEPTED);
 }
 
 int tdg_map_gpa(phys_addr_t gpa, int numpages, enum tdx_map_type map_type)
 {
 	int ret, i;
+
+	if (map_type != TDX_MAP_SHARED) {
+		WARN_ON(1);
+		return 0;
+	}
 
 	ret = __tdg_map_gpa(gpa, numpages, map_type);
 	if (ret || map_type == TDX_MAP_SHARED)

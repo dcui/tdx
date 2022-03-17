@@ -186,9 +186,6 @@ int vmbus_alloc_ring(struct vmbus_channel *newchannel,
 	if (!page)
 		return -ENOMEM;
 
-	if (is_tdx_guest())
-		set_memory_decrypted((unsigned long)page_address(page), 1 << order);
-
 	newchannel->ringbuffer_page = page;
 	newchannel->ringbuffer_pagecount = (send_size + recv_size) >> PAGE_SHIFT;
 	newchannel->ringbuffer_send_offset = send_size >> PAGE_SHIFT;
@@ -297,10 +294,10 @@ static int create_gpadl_header(enum hv_gpadl_type type, void *kbuffer,
 			gpadl_header->range[0].pfn_array[i] = hv_gpadl_hvpfn(
 				type, kbuffer, size, send_offset, i);
 		*msginfo = msgheader;
-		ret = hv_mark_gpa_visibility(i,
-			gpadl_header->range[0].pfn_array, visibility);
-		if (ret < 0)
-			goto nomem;
+		//ret = hv_mark_gpa_visibility(i,
+		//	gpadl_header->range[0].pfn_array, visibility);
+		//if (ret < 0)
+		//	goto nomem;
 
 		pfnsum = pfncount;
 		pfnleft = pagecount - pfncount;
@@ -338,10 +335,10 @@ static int create_gpadl_header(enum hv_gpadl_type type, void *kbuffer,
 			for (i = 0; i < pfncurr; i++)
 				gpadl_body->pfn[i] = hv_gpadl_hvpfn(type,
 					kbuffer, size, send_offset, pfnsum + i);
-			ret = hv_mark_gpa_visibility(i, gpadl_body->pfn,
-						     visibility);
-			if (ret < 0)
-				goto Cleanvisibility;
+			//ret = hv_mark_gpa_visibility(i, gpadl_body->pfn,
+			//			     visibility);
+			//if (ret < 0)
+			//	goto Cleanvisibility;
 
 			/* add to msg header */
 			list_add_tail(&msgbody->msglistentry,
@@ -372,10 +369,10 @@ static int create_gpadl_header(enum hv_gpadl_type type, void *kbuffer,
 			gpadl_header->range[0].pfn_array[i] = hv_gpadl_hvpfn(
 				type, kbuffer, size, send_offset, i);
 
-		ret = hv_mark_gpa_visibility(i, gpadl_header->range[0].pfn_array,
-					     visibility);
-		if (ret < 0)
-			goto nomem;
+		//ret = hv_mark_gpa_visibility(i, gpadl_header->range[0].pfn_array,
+		//			     visibility);
+		//if (ret < 0)
+		//	goto nomem;
 		*msginfo = msgheader;
 	}
 
@@ -405,8 +402,8 @@ Cleanvisibility:
 		for (i = 0; i < pfncurr; i++)
 			gpadl_body->pfn[i] = virt_to_hvpfn(
 				kbuffer + PAGE_SIZE * (pfnsum + i));
-		hv_mark_gpa_visibility(i, gpadl_body->pfn,
-				VMBUS_PAGE_NOT_VISIBLE);
+		//hv_mark_gpa_visibility(i, gpadl_body->pfn,
+		//		VMBUS_PAGE_NOT_VISIBLE);
 
 		pfnsum += pfncurr;
 		pfnleft -= pfncurr;

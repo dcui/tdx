@@ -2040,8 +2040,9 @@ static int __set_memory_protect(unsigned long addr, int numpages, bool protect)
 	 */
 	cpa_flush(&cpa, 0);
 
-	if (!ret && is_tdx_guest()) {
-		ret = tdg_map_gpa(__pa(addr), numpages, map_type);
+	if (!ret && is_tdx_guest()
+	    && !is_vmalloc_addr((void *)addr)) {
+		ret = tdg_map_gpa(__pa((void *)addr), numpages, map_type);
 	}
 
 	return ret;

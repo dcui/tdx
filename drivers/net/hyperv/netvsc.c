@@ -28,6 +28,12 @@
 #include "hyperv_net.h"
 #include "netvsc_trace.h"
 #include "../../hv/hyperv_vmbus.h"
+#include <asm/set_memory.h>
+#include <asm/tdx.h>
+
+
+extern bool tdx_switch;
+
 /*
  * Switch the data path from the synthetic interface to the VF
  * interface.
@@ -353,6 +359,16 @@ static int netvsc_init_buf(struct hv_device *device,
 		goto cleanup;
 	}
 
+	if (is_tdx_guest()) {
+		set_memory_decrypted(net_device->recv_buf, buf_size / HV_HYP_PAGE_SIZE);
+		for (i = 0; i < buf_size / HV_HYP_PAGE_SIZE; i++) {
+			tdg_map_gpa(vmalloc_to_pfn(net_device->recv_buf + i * HV_HYP_PAGE_SIZE) << PAGE_SHIFT,
+				    HV_HYP_PAGE_SIZE, TDX_MAP_SHARED);
+		}
+
+		memset((void *)net_device->recv_buf, 0x00, buf_size);
+        }
+
 	if (hv_isolation_type_snp()) {
 		area = get_vm_area(buf_size, 0);
 		if (!area || !area->addr)
@@ -373,6 +389,7 @@ static int netvsc_init_buf(struct hv_device *device,
 					   vaddr + (i + 1) * HV_HYP_PAGE_SIZE,
 					   extra_phys, PAGE_KERNEL_IO);
 		}
+		
 		net_device->recv_buf = (void *)vaddr;
 	}
 
@@ -480,6 +497,16 @@ static int netvsc_init_buf(struct hv_device *device,
 			   "unable to establish send buffer's gpadl\n");
 		goto cleanup;
 	}
+
+	if (is_tdx_guest()) {
+		set_memory_decrypted(net_device->send_buf, buf_size / HV_HYP_PAGE_SIZE);
+		for (i = 0; i < buf_size / HV_HYP_PAGE_SIZE; i++) {
+			tdg_map_gpa(vmalloc_to_pfn(net_device->send_buf + i * HV_HYP_PAGE_SIZE) << PAGE_SHIFT,
+				    HV_HYP_PAGE_SIZE, TDX_MAP_SHARED);
+		}
+
+		memset((void *)net_device->send_buf, 0x00, buf_size);
+        }
 
 	if (hv_isolation_type_snp()) {
 		area = get_vm_area(buf_size, 0);
@@ -1663,10 +1690,11 @@ struct netvsc_device *netvsc_device_add(struct hv_device *device,
 
 	/* Open the channel */
 	device->channel->rqstor_size = netvsc_rqstor_size(netvsc_ring_bytes);
+	pr_info("%s %d.\n", __func__, __LINE__);
 	ret = vmbus_open(device->channel, netvsc_ring_bytes,
 			 netvsc_ring_bytes,  NULL, 0,
 			 netvsc_channel_cb, net_device->chan_table);
-
+	pr_info("%s %d.\n", __func__, __LINE__);
 	if (ret != 0) {
 		netdev_err(ndev, "unable to open channel: %d\n", ret);
 		goto cleanup;
@@ -1678,7 +1706,9 @@ struct netvsc_device *netvsc_device_add(struct hv_device *device,
 	napi_enable(&net_device->chan_table[0].napi);
 
 	/* Connect with the NetVsp */
+	pr_info("%s %d.\n", __func__, __LINE__);
 	ret = netvsc_connect_vsp(device, net_device, device_info);
+	pr_info("%s %d.\n", __func__, __LINE__);
 	if (ret != 0) {
 		netdev_err(ndev,
 			"unable to connect to NetVSP - %d\n", ret);

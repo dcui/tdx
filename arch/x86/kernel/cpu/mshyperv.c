@@ -503,6 +503,7 @@ int hv_mark_gpa_visibility(u16 count, const u64 pfn[], u32 visibility)
 			if (ret)
 				pr_err("set_memory failed: %d\n", ret);
 		}
+		printk("Finish hv_mark_gpa_visibility %hd\n", count);
 		return 0;
 	}
 

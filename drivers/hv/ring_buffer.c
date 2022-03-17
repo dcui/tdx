@@ -18,7 +18,9 @@
 #include <linux/slab.h>
 #include <linux/prefetch.h>
 #include <linux/io.h>
+#include <asm/set_memory.h>
 #include <asm/mshyperv.h>
+#include <asm/tdx.h>
 
 #include "hyperv_vmbus.h"
 
@@ -237,7 +239,7 @@ int hv_ringbuffer_post_init(struct hv_ring_buffer_info *ring_info,
 int hv_ringbuffer_init(struct hv_ring_buffer_info *ring_info,
 		       struct page *pages, u32 page_cnt)
 {
-	int i;
+	int i, ret;
 	struct page **pages_wraparound;
 
 	BUILD_BUG_ON((sizeof(struct hv_ring_buffer) != PAGE_SIZE));
@@ -266,6 +268,12 @@ int hv_ringbuffer_init(struct hv_ring_buffer_info *ring_info,
 
 		ring_info->ring_buffer->read_index =
 			ring_info->ring_buffer->write_index = 0;
+
+		if (is_tdx_guest()) {
+			set_memory_decrypted((unsigned long)ring_info->ring_buffer, (page_cnt * 2 - 1));
+			tdg_map_gpa(page_to_pfn(pages) << PAGE_SHIFT, page_cnt, TDX_MAP_SHARED);
+			memset((void *)ring_info->ring_buffer, 0x00, page_cnt * PAGE_SIZE);
+	        }
 
 		/* Set the feature bit for enabling flow control. */
 		ring_info->ring_buffer->feature_bits.value = 1;

@@ -252,8 +252,9 @@ static int hv_bounce_page_list_alloc(struct vmbus_channel *channel, u32 count)
 	channel->bounce_page_alloc_count += count;
 	queue_work = IS_BP_MAINTENANCE_TASK_NEEDED(channel);
 	spin_unlock_irqrestore(&channel->bp_lock, flags);
-	if (queue_work)
-		BP_QUEUE_MAINTENANCE_WORK(channel);
+	//if (queue_work)
+	//	BP_QUEUE_MAINTENANCE_WORK(channel);
+	printk("hv_bounce_page_list_alloc returns successfully.\n");
 	return 0;
 err_free:
 	if (va)
@@ -291,8 +292,8 @@ static void hv_bounce_page_list_release(struct vmbus_channel *channel,
 
 	queue_work = IS_BP_MAINTENANCE_TASK_NEEDED(channel);
 	spin_unlock_irqrestore(&channel->bp_lock, flags);
-	if (queue_work)
-		BP_QUEUE_MAINTENANCE_WORK(channel);
+	//if (queue_work)
+	//	BP_QUEUE_MAINTENANCE_WORK(channel);
 }
 
 /*
@@ -335,8 +336,8 @@ static void hv_bounce_page_list_maintain(struct work_struct *work)
 	spin_unlock_irqrestore(&channel->bp_lock, flags);
 	if (!list_empty(&head_to_free))
 		hv_bounce_page_list_free(channel, &head_to_free);
-	if (queue_work)
-		BP_QUEUE_MAINTENANCE_WORK(channel);
+	//if (queue_work)
+	//	BP_QUEUE_MAINTENANCE_WORK(channel);
 }
 
 /*

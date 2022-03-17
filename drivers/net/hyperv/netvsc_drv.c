@@ -54,6 +54,7 @@ static const u32 default_msg = NETIF_MSG_DRV | NETIF_MSG_PROBE |
 				NETIF_MSG_LINK | NETIF_MSG_IFUP |
 				NETIF_MSG_IFDOWN | NETIF_MSG_RX_ERR |
 				NETIF_MSG_TX_ERR;
+extern bool tdx_switch;
 
 static int debug = -1;
 module_param(debug, int, 0444);
@@ -2519,10 +2520,13 @@ static int netvsc_probe(struct hv_device *dev,
 		goto devinfo_failed;
 	}
 
+	tdx_switch = true;
 	ret = hv_bounce_resources_reserve(dev->channel, PAGE_SIZE * 64);
+	tdx_switch = false;
 	if (ret < 0)
 		return ret;
 
+	printk("Rndis filter device add.\n");
 	nvdev = rndis_filter_device_add(dev, device_info);
 	if (IS_ERR(nvdev)) {
 		ret = PTR_ERR(nvdev);
@@ -2562,6 +2566,7 @@ static int netvsc_probe(struct hv_device *dev,
 
 	nvdev->tx_disable = false;
 
+	printk("register net device.\n");
 	ret = register_netdevice(net);
 	if (ret != 0) {
 		pr_err("Unable to register netdev.\n");
@@ -2572,6 +2577,7 @@ static int netvsc_probe(struct hv_device *dev,
 	rtnl_unlock();
 
 	netvsc_devinfo_put(device_info);
+	printk("Netvsc driver returns successfully.\n");
 	return 0;
 
 register_failed:
@@ -2585,6 +2591,7 @@ no_stats:
 	hv_set_drvdata(dev, NULL);
 	free_netdev(net);
 no_net:
+	printk("Netvsc driver returns error %d.\n", ret);
 	return ret;
 }
 

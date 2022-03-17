@@ -253,9 +253,11 @@ static int rndis_filter_send_request(struct rndis_device *dev,
 
 	trace_rndis_send(dev->ndev, 0, &req->request_msg);
 
+	pr_info("%s %d.\n", __func__, __LINE__);
 	rcu_read_lock_bh();
 	ret = netvsc_send(dev->ndev, packet, NULL, pb, NULL, false);
 	rcu_read_unlock_bh();
+	pr_info("%s %d.\n", __func__, __LINE__);
 
 	return ret;
 }
@@ -1118,12 +1120,15 @@ static int rndis_filter_init_device(struct rndis_device *dev,
 	dev->state = RNDIS_DEV_INITIALIZING;
 
 	ret = rndis_filter_send_request(dev, request);
+	pr_info("%s %d.\n", __func__, __LINE__);
 	if (ret != 0) {
 		dev->state = RNDIS_DEV_UNINITIALIZED;
 		goto cleanup;
 	}
 
+	pr_info("%s %d.\n", __func__, __LINE__);
 	wait_for_completion(&request->wait_event);
+	pr_info("%s %d.\n", __func__, __LINE__);
 
 	init_complete = &request->response_msg.msg.init_complete;
 	status = init_complete->status;
@@ -1477,6 +1482,7 @@ struct netvsc_device *rndis_filter_device_add(struct hv_device *dev,
 	if (!rndis_device)
 		return ERR_PTR(-ENODEV);
 
+	pr_info("%s %d.\n", __func__, __LINE__);
 	/* Let the inner driver handle this first to create the netvsc channel
 	 * NOTE! Once the channel is created, we may get a receive callback
 	 * (RndisFilterOnReceive()) before this call is completed
@@ -1493,12 +1499,14 @@ struct netvsc_device *rndis_filter_device_add(struct hv_device *dev,
 
 	net_device->extension = rndis_device;
 	rndis_device->ndev = net;
+	pr_info("%s %d.\n", __func__, __LINE__);
 
 	/* Send the rndis initialization message */
 	ret = rndis_filter_init_device(rndis_device, net_device);
 	if (ret != 0)
 		goto err_dev_remv;
 
+	pr_info("%s %d.\n", __func__, __LINE__);	
 	/* Get the MTU from the host */
 	size = sizeof(u32);
 	ret = rndis_filter_query_device(rndis_device, net_device,
@@ -1507,11 +1515,13 @@ struct netvsc_device *rndis_filter_device_add(struct hv_device *dev,
 	if (ret == 0 && size == sizeof(u32) && mtu < net->mtu)
 		net->mtu = mtu;
 
+	pr_info("%s %d.\n", __func__, __LINE__);
 	/* Get the mac address */
 	ret = rndis_filter_query_device_mac(rndis_device, net_device);
 	if (ret != 0)
 		goto err_dev_remv;
 
+	pr_info("%s %d.\n", __func__, __LINE__);
 	memcpy(device_info->mac_adr, rndis_device->hw_mac_adr, ETH_ALEN);
 
 	/* Get friendly name as ifalias*/
@@ -1523,6 +1533,7 @@ struct netvsc_device *rndis_filter_device_add(struct hv_device *dev,
 	if (ret != 0)
 		goto err_dev_remv;
 
+	pr_info("%s %d.\n", __func__, __LINE__);
 	rndis_filter_query_device_link_status(rndis_device, net_device);
 
 	netdev_dbg(net, "Device MAC %pM link state %s\n",
@@ -1534,11 +1545,13 @@ struct netvsc_device *rndis_filter_device_add(struct hv_device *dev,
 
 	rndis_filter_query_link_speed(rndis_device, net_device);
 
+	pr_info("%s %d.\n", __func__, __LINE__);
 	/* vRSS setup */
 	memset(&rsscap, 0, rsscap_size);
 	ret = rndis_filter_query_device(rndis_device, net_device,
 					OID_GEN_RECEIVE_SCALE_CAPABILITIES,
 					&rsscap, &rsscap_size);
+	pr_info("%s %d.\n", __func__, __LINE__);
 	if (ret || rsscap.num_recv_que < 2)
 		goto out;
 
