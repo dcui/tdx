@@ -67,6 +67,8 @@ static bool swiotlb_force_disable;
 
 struct io_tlb_mem io_tlb_default_mem;
 
+static bool swiotlb_alloc_from_low_pages = true;
+
 phys_addr_t swiotlb_unencrypted_base;
 
 static unsigned long default_nslabs = IO_TLB_DEFAULT_SIZE >> IO_TLB_SHIFT;
@@ -97,6 +99,11 @@ unsigned int swiotlb_max_segment(void)
 	return rounddown(io_tlb_default_mem.nslabs << IO_TLB_SHIFT, PAGE_SIZE);
 }
 EXPORT_SYMBOL_GPL(swiotlb_max_segment);
+
+void swiotlb_set_alloc_from_low_pages(bool low)
+{
+	swiotlb_alloc_from_low_pages = low;
+}
 
 unsigned long swiotlb_size_or_default(void)
 {
@@ -249,7 +256,7 @@ void __init swiotlb_init_remap(bool addressing_limit, unsigned int flags,
 	 */
 retry:
 	bytes = PAGE_ALIGN(nslabs << IO_TLB_SHIFT);
-	if (flags & SWIOTLB_ANY)
+	if (flags & SWIOTLB_ANY && !swiotlb_alloc_from_low_pages)
 		tlb = memblock_alloc(bytes, PAGE_SIZE);
 	else
 		tlb = memblock_alloc_low(bytes, PAGE_SIZE);
