@@ -324,6 +324,7 @@ static int netvsc_init_buf(struct hv_device *device,
 	size_t map_words;
 	int i, ret = 0;
 
+	printk("tdx: netvsc_init_buf: 2357 4/12\n");
 	/* Get receive buffer area. */
 	buf_size = device_info->recv_sections * device_info->recv_section_size;
 	buf_size = roundup(buf_size, PAGE_SIZE);
@@ -360,10 +361,11 @@ static int netvsc_init_buf(struct hv_device *device,
 	}
 
 	if (is_tdx_guest()) {
+		printk("tdx: netvsc_init_buf: recv_buf: tdg_map_gpa: 3/16\n");
 		set_memory_decrypted(net_device->recv_buf, buf_size / HV_HYP_PAGE_SIZE);
 		for (i = 0; i < buf_size / HV_HYP_PAGE_SIZE; i++) {
 			tdg_map_gpa(vmalloc_to_pfn(net_device->recv_buf + i * HV_HYP_PAGE_SIZE) << PAGE_SHIFT,
-				    HV_HYP_PAGE_SIZE, TDX_MAP_SHARED);
+				    1, TDX_MAP_SHARED);
 		}
 
 		memset((void *)net_device->recv_buf, 0x00, buf_size);
@@ -499,10 +501,11 @@ static int netvsc_init_buf(struct hv_device *device,
 	}
 
 	if (is_tdx_guest()) {
+		printk("tdx: netvsc_init_buf: send_buf: tdg_map_gpa: 3/16\n");
 		set_memory_decrypted(net_device->send_buf, buf_size / HV_HYP_PAGE_SIZE);
 		for (i = 0; i < buf_size / HV_HYP_PAGE_SIZE; i++) {
 			tdg_map_gpa(vmalloc_to_pfn(net_device->send_buf + i * HV_HYP_PAGE_SIZE) << PAGE_SHIFT,
-				    HV_HYP_PAGE_SIZE, TDX_MAP_SHARED);
+				    1, TDX_MAP_SHARED);
 		}
 
 		memset((void *)net_device->send_buf, 0x00, buf_size);
