@@ -1482,8 +1482,15 @@ class IGVMFile(VMState):
                         (CpuIdFunctionExtendedAddressSpaceSizes, 0),
                         (CpuIdFunctionExtendedSvmVersionAndFeatures, 0),
                         (CpuIdFunctionProcessorTopologyDefinition, 0),
-                        #(CpuIdFunctionExtendedStateEnumeration, 0),
-                        #(CpuIdFunctionExtendedStateEnumeration, 1),
+                        (CpuIdFunctionExtendedStateEnumeration, 0),
+                        (CpuIdFunctionExtendedStateEnumeration, 1),
+                        (CpuIdFunctionExtendedStateEnumeration, 2),
+                        (CpuIdFunctionExtendedStateEnumeration, 3),
+                        (CpuIdFunctionExtendedStateEnumeration, 4),
+                        (CpuIdFunctionExtendedStateEnumeration, 5),
+                        (CpuIdFunctionExtendedStateEnumeration, 6),
+                        (CpuIdFunctionExtendedStateEnumeration, 7),
+                        (CpuIdFunctionExtendedStateEnumeration, 8),
                         (CpuIdFunctionExtendedBrandingString1, 0),
                         (CpuIdFunctionExtendedBrandingString2, 0),
                         (CpuIdFunctionExtendedBrandingString3, 0),
@@ -1496,6 +1503,8 @@ class IGVMFile(VMState):
             cpuid_page.Count += 1
             cpuid_page.CpuidLeafInfo[i].EaxIn = cpuid_leaves[i][0]
             cpuid_page.CpuidLeafInfo[i].EcxIn = cpuid_leaves[i][1]
+            if cpuid_leaves[i][0] == CpuIdFunctionExtendedStateEnumeration:
+                cpuid_page.CpuidLeafInfo[i].XfemIn = 1
         return cpuid_page
 
     def gen_vmsa(self):
