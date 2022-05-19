@@ -113,6 +113,9 @@ static const __initconst struct idt_data def_idts[] = {
 #elif defined(CONFIG_X86_32)
 	SYSG(IA32_SYSCALL_VECTOR,	entry_INT80_32),
 #endif
+#ifdef CONFIG_AMD_MEM_ENCRYPT
+	INTG(X86_TRAP_HV,		asm_exc_hv),
+#endif
 };
 
 /*
@@ -227,23 +230,6 @@ void __init idt_setup_traps(void)
  */
 static const __initconst struct idt_data early_pf_idts[] = {
 	INTG(X86_TRAP_PF,		asm_exc_page_fault),
-};
-
-/*
- * The exceptions which use Interrupt stacks. They are setup after
- * cpu_init() when the TSS has been initialized.
- */
-static const __initconst struct idt_data ist_idts[] = {
-	ISTG(X86_TRAP_DB,	asm_exc_debug,			IST_INDEX_DB),
-	ISTG(X86_TRAP_NMI,	asm_exc_nmi,			IST_INDEX_NMI),
-	ISTG(X86_TRAP_DF,	asm_exc_double_fault,		IST_INDEX_DF),
-#ifdef CONFIG_X86_MCE
-	ISTG(X86_TRAP_MC,	asm_exc_machine_check,		IST_INDEX_MCE),
-#endif
-#ifdef CONFIG_AMD_MEM_ENCRYPT
-	ISTG(X86_TRAP_VC,	asm_exc_vmm_communication,	IST_INDEX_VC),
-	ISTG(X86_TRAP_HV,	asm_exc_hv,			IST_INDEX_HV),
-#endif
 };
 
 /**

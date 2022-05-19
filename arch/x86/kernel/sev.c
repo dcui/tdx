@@ -113,8 +113,6 @@ struct sev_hv_doorbell_page {
 
 struct sev_snp_runtime_data {
 	struct sev_hv_doorbell_page hv_doorbell_page;
-	char hv_stack[EXCEPTION_STKSZ] __aligned(PAGE_SIZE);
-	char fallback_stack[EXCEPTION_STKSZ] __aligned(PAGE_SIZE);	
 };
 
 static DEFINE_PER_CPU(struct sev_snp_runtime_data*, snp_runtime_data);
@@ -188,17 +186,14 @@ static void do_exc_hv(struct pt_regs *regs)
 
 void check_hv_pending(struct pt_regs *regs)
 {
-	struct pt_regs local_regs;
-
 	if (!sev_snp_active())
 		return;
 
 	if (regs) {
 		if ((regs->flags & X86_EFLAGS_IF) == 0)
 			return;
-		asm volatile("sti": : :"memory");
-	
 
+		asm volatile("sti": : :"memory");
 		if (!this_cpu_read(hv_pending))
 			return;
 		do_exc_hv(regs);
@@ -407,10 +402,6 @@ void __init sev_snp_init_hv_handling(void)
 	int err;
 	struct ghcb_state state;
 	struct ghcb *ghcb;
-	struct cpu_entry_area *cea;
-	unsigned long vaddr;
-	phys_addr_t pa;
-
 
 	BUILD_BUG_ON(offsetof(struct sev_snp_runtime_data, hv_doorbell_page) % PAGE_SIZE);
 
@@ -430,16 +421,6 @@ void __init sev_snp_init_hv_handling(void)
 
 		memset(&snp_data->hv_doorbell_page, 0, sizeof(snp_data->hv_doorbell_page));
 
-		/* Map #HV IST stack */
-		cea = get_cpu_entry_area(cpu);
-		vaddr = CEA_ESTACK_BOT(&cea->estacks, HV);
-		pa = __pa(snp_data->hv_stack);
-		cea_set_pte((void *)vaddr, pa, PAGE_KERNEL);
-
-		vaddr = CEA_ESTACK_BOT(&cea->estacks, HV2);
-		pa = __pa(snp_data->fallback_stack);
-		cea_set_pte((void *)vaddr, pa, PAGE_KERNEL);
-		
 		per_cpu(snp_runtime_data, cpu) = snp_data;
 	}
 

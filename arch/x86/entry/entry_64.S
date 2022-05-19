@@ -542,15 +542,6 @@ SYM_CODE_START(\asmsym)
 
 	UNWIND_HINT_REGS
 
-	/*
-	 * Switch off the IST stack to make it free for nested exceptions.
-	 */
-	movq	%rsp, %rdi		/* pt_regs pointer */
-	call	hv_switch_off_ist
-	movq	%rax, %rsp		/* Switch to new stack */
-
-	UNWIND_HINT_REGS
-
 	movq	%rsp, %rdi		/* pt_regs pointer */
 	call	\cfunc
 
