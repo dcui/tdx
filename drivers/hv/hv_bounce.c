@@ -617,7 +617,7 @@ EXPORT_SYMBOL_GPL(hv_pkt_bounce);
 
 int hv_init_channel_ivm(struct vmbus_channel *channel)
 {
-	printk("hv_init_channel_ivm\n");
+	//printk("hv_init_channel_ivm\n");
 	if (WARN_ON(!hv_partition_is_isolated()))
 		return 0;
 

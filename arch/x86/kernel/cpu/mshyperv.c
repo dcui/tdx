@@ -492,7 +492,7 @@ int hv_mark_gpa_visibility(u16 count, const u64 pfn[], u32 visibility)
 	u64 hv_status;
 	unsigned long flags;
 
-	printk("hv_mark_gpa_visibility %hd\n", count);
+	//printk("hv_mark_gpa_visibility %hd\n", count);
 	if (is_tdx_guest()) {
 		int i, ret;
 		for (i = 0; i < count; i++) {
@@ -503,7 +503,7 @@ int hv_mark_gpa_visibility(u16 count, const u64 pfn[], u32 visibility)
 			if (ret)
 				pr_err("set_memory failed: %d\n", ret);
 		}
-		printk("Finish hv_mark_gpa_visibility %hd\n", count);
+		//printk("Finish hv_mark_gpa_visibility %hd\n", count);
 		return 0;
 	}
 
