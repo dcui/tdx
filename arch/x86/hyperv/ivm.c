@@ -22,12 +22,14 @@ EXPORT_SYMBOL_GPL(hv_get_isolation_type);
 
 bool hv_is_isolation_supported(void)
 {
-	return hv_get_isolation_type() != HV_ISOLATION_TYPE_NONE;
+	return true;
+//	return hv_get_isolation_type() != HV_ISOLATION_TYPE_NONE;
 }
 EXPORT_SYMBOL_GPL(hv_is_isolation_supported);
 
 bool hv_isolation_type_snp(void)
 {
-	return hv_get_isolation_type() == HV_ISOLATION_TYPE_SNP;
+	return true;
+	//return hv_get_isolation_type() == HV_ISOLATION_TYPE_SNP;
 }
 EXPORT_SYMBOL_GPL(hv_isolation_type_snp);

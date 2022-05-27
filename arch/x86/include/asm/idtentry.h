@@ -316,7 +316,8 @@ static __always_inline void __##func(struct pt_regs *regs)
 	__visible noinstr void   user_##func(struct pt_regs *regs, unsigned long error_code)
 
 #define DECLARE_IDTENTRY_HV(vector, func)				\
-	DECLARE_IDTENTRY_RAW(vector, func);
+	DECLARE_IDTENTRY(vector, func)
+
 
 /**
  * DEFINE_IDTENTRY_IST - Emit code for IST entry points
@@ -378,7 +379,7 @@ static __always_inline void __##func(struct pt_regs *regs)
 	DEFINE_IDTENTRY_RAW_ERRORCODE(user_##func)
 
 #define DEFINE_IDTENTRY_HV(func)					\
-	DEFINE_IDTENTRY_RAW(func)
+	DEFINE_IDTENTRY(func)
 
 #else	/* CONFIG_X86_64 */
 

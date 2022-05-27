@@ -122,6 +122,11 @@ struct sev_hv_doorbell_page *sev_snp_current_doorbell_page(void)
 	return &this_cpu_read(snp_runtime_data)->hv_doorbell_page;
 }
 
+static u8 sev_hv_pending(void)
+{
+	return sev_snp_current_doorbell_page()->vector;
+}
+
 static void hv_doorbell_apic_eoi_write(u32 reg, u32 val)
 {
 	if (xchg(&sev_snp_current_doorbell_page()->no_eoi_required, 0) & 0x1)
@@ -131,17 +136,13 @@ static void hv_doorbell_apic_eoi_write(u32 reg, u32 val)
 	apic->write(reg, val);
 }
 
-static DEFINE_PER_CPU(u8, hv_pending);
-
 static void do_exc_hv(struct pt_regs *regs)
 {
 	u8 vector;
 
-	BUG_ON((native_save_fl() & X86_EFLAGS_IF) == 0);
-
-	while (this_cpu_read(hv_pending)) {
+	while (sev_hv_pending()) {
 		asm volatile("cli": : :"memory");
-		this_cpu_write(hv_pending, 0);
+
 		vector = xchg(&sev_snp_current_doorbell_page()->vector, 0);
 
 		switch (vector) {
@@ -183,6 +184,8 @@ static void do_exc_hv(struct pt_regs *regs)
 
 void check_hv_pending(struct pt_regs *regs)
 {
+	struct pt_regs local_regs;
+	
 	if (!sev_snp_active())
 		return;
 
@@ -191,11 +194,12 @@ void check_hv_pending(struct pt_regs *regs)
 			return;
 
 		asm volatile("sti": : :"memory");
-		if (!this_cpu_read(hv_pending))
+		if (!sev_hv_pending())
 			return;
+
 		do_exc_hv(regs);
 	} else { 		
-		if (this_cpu_read(hv_pending)) {
+		if (sev_hv_pending()) {
 			memset(&local_regs, 0, sizeof(struct pt_regs));
 			regs = &local_regs;
 			regs->cs = 0x10;
@@ -208,15 +212,13 @@ void check_hv_pending(struct pt_regs *regs)
 }
 EXPORT_SYMBOL_GPL(check_hv_pending);
 
-DEFINE_IDTENTRY_RAW(exc_hv)
+DEFINE_IDTENTRY_HV(exc_hv)
 {
-	this_cpu_write(hv_pending, 1);
 
 	/* Clear the no_further_signal bit */
 	sev_snp_current_doorbell_page()->pending_events &= 0x7fff;
 
-	/* TODO: handle NMI and MC? */
-
+	/* TODO: handle NMI and MC? */	
 	check_hv_pending(regs);
 }
 
@@ -393,10 +395,11 @@ noinstr struct ghcb *__sev_get_ghcb(struct ghcb_state *state)
 void __init sev_snp_init_hv_handling(void)
 {
 	struct sev_snp_runtime_data *snp_data;
-	int cpu;
-	int err;
 	struct ghcb_state state;
 	struct ghcb *ghcb;
+	unsigned long flags;
+	int cpu;
+	int err;
 
 	BUILD_BUG_ON(offsetof(struct sev_snp_runtime_data, hv_doorbell_page) % PAGE_SIZE);
 
@@ -419,10 +422,12 @@ void __init sev_snp_init_hv_handling(void)
 		per_cpu(snp_runtime_data, cpu) = snp_data;
 	}
 
+	local_irq_save(flags);
 	ghcb = __sev_get_ghcb(&state);
 	sev_snp_setup_hv_doorbell_page(ghcb);
 	sev_es_put_ghcb(&state);
 	apic_set_eoi_write(hv_doorbell_apic_eoi_write);
+	local_irq_restore(flags);
 }
 
 static int vc_fetch_insn_kernel(struct es_em_ctxt *ctxt,
@@ -855,11 +860,13 @@ static void snp_set_page_state(unsigned long paddr, unsigned int npages, int op)
 	struct snp_page_state_entry *e;
 	struct ghcb_state state;
 	struct ghcb *ghcb;
+	unsigned long flags;
 	int ret, idx;
 
 	paddr = paddr & PAGE_MASK;
 	paddr_end = paddr + (npages << PAGE_SHIFT);
 
+	local_irq_save(flags);
 	ghcb = __sev_get_ghcb(&state);
 
 	data = (struct snp_page_state_change *)ghcb->shared_buffer;
@@ -901,9 +908,11 @@ static void snp_set_page_state(unsigned long paddr, unsigned int npages, int op)
 	}
 
 	sev_es_put_ghcb(&state);
+	local_irq_restore(flags);
 	return;
 
 e_fail:
+	local_irq_restore(flags);
 	/* Dump stack for the debugging purpose */
 	dump_stack();
 
@@ -1157,12 +1166,13 @@ int vmgexit_snp_guest_request(unsigned long request, unsigned long response)
 	enum es_result ret;
 	struct ghcb_state state;
 	struct ghcb *ghcb;
-	unsigned long request_pa, response_pa;
+	unsigned long request_pa, response_pa, flags;
 	int fw_err;
 
 	if (!sev_snp_active())
 		return -ENXIO;
 
+	local_irq_save(flags);
 	request_pa = __pa(request);
 	response_pa = __pa(response);
 
@@ -1172,6 +1182,7 @@ int vmgexit_snp_guest_request(unsigned long request, unsigned long response)
 				request_pa, response_pa);
 	fw_err = ghcb->save.sw_exit_info_2;
 	__sev_put_ghcb(&state);
+	local_irq_restore(flags);
 
 	if (ret != ES_OK)
 		fw_err = -ENXIO;
@@ -1785,6 +1796,7 @@ static enum es_result vc_handle_exitcode(struct es_em_ctxt *ctxt,
 		/*
 		 * Unexpected #VC exception
 		 */
+		pr_info("unexpect vc!!!\n");
 		result = ES_UNSUPPORTED;
 	}
 

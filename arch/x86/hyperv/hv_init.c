@@ -88,7 +88,7 @@ static int hv_cpu_init(unsigned int cpu)
 				BUG_ON(set_memory_decrypted((unsigned long)(*hvp), 1) != 0);
 				memset(*hvp, 0, PAGE_SIZE);
 			}
-	
+
 			msr.enable = 1;
 			wrmsrl(HV_X64_MSR_VP_ASSIST_PAGE, msr.as_uint64);
 		}
@@ -197,6 +197,8 @@ static int hv_cpu_die(unsigned int cpu)
 	void *pg;
 
 	hv_common_cpu_die(cpu);
+
+	local_irq_save(flags);
 
 	if (hv_vp_assist_page && hv_vp_assist_page[cpu]) {
 		union hv_vp_assist_msr_contents msr = { 0 };

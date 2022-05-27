@@ -531,7 +531,6 @@ static int __vmbus_establish_gpadl(struct vmbus_channel *channel,
 
 	}
 	wait_for_completion(&msginfo->waitevent);
-
 	if (msginfo->response.gpadl_created.creation_status != 0) {
 		pr_err("Failed to establish GPADL: err = 0x%x\n",
 		       msginfo->response.gpadl_created.creation_status);
@@ -743,7 +742,6 @@ static int __vmbus_open(struct vmbus_channel *newchannel,
 
 	err = vmbus_post_msg(open_msg,
 			     sizeof(struct vmbus_channel_open_channel), true);
-
 	trace_vmbus_open(open_msg, err);
 
 	if (err != 0)
