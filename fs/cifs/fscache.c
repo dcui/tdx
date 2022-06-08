@@ -51,7 +51,7 @@ int cifs_fscache_get_super_cookie(struct cifs_tcon *tcon)
 	 * we may want to instead add a check if cookie has changed
 	 */
 	if (tcon->fscache)
-		return;
+		return -EINVAL;
 
 	sharename = extract_sharename(tcon->treeName);
 	if (IS_ERR(sharename)) {
