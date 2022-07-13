@@ -321,6 +321,7 @@ int ioremap_page_range(unsigned long addr, unsigned long end,
 	flush_cache_vmap(addr, end);
 	return err;
 }
+EXPORT_SYMBOL_GPL(ioremap_page_range);
 
 static void vunmap_pte_range(pmd_t *pmd, unsigned long addr, unsigned long end,
 			     pgtbl_mod_mask *mask)
@@ -2459,6 +2460,7 @@ struct vm_struct *get_vm_area(unsigned long size, unsigned long flags)
 				  NUMA_NO_NODE, GFP_KERNEL,
 				  __builtin_return_address(0));
 }
+EXPORT_SYMBOL_GPL(get_vm_area);
 
 struct vm_struct *get_vm_area_caller(unsigned long size, unsigned long flags,
 				const void *caller)

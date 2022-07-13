@@ -303,11 +303,43 @@ int vmbus_send_modifychannel(struct vmbus_channel *channel, u32 target_vp)
 EXPORT_SYMBOL_GPL(vmbus_send_modifychannel);
 
 /*
+ * hv_set_mem_host_visibility - Set host visibility for specified memory.
+ */
+int hv_set_mem_host_visibility(void *kbuffer, u32 size, u32 visibility)
+{
+	int i, pfn;
+	int pagecount = size >> HV_HYP_PAGE_SHIFT;
+	u64 *pfn_array;
+	int ret = 0;
+
+	if (!hv_is_isolation_supported())
+		return 0;
+
+	pfn_array = vzalloc(HV_HYP_PAGE_SIZE);
+	if (!pfn_array)
+		return -ENOMEM;
+
+	for (i = 0, pfn = 0; i < pagecount; i++) {
+		pfn_array[pfn] = virt_to_hvpfn(kbuffer + i * HV_HYP_PAGE_SIZE);
+		pfn++;
+
+		if (pfn == HV_MAX_MODIFY_GPA_REP_COUNT || i == pagecount - 1) {
+			ret |= hv_mark_gpa_visibility(pfn, pfn_array, visibility);
+			pfn = 0;
+		}
+	}
+
+	vfree(pfn_array);
+	return ret;
+}
+EXPORT_SYMBOL_GPL(hv_set_mem_host_visibility);
+
+/*
  * create_gpadl_header - Creates a gpadl for the specified buffer
  */
 static int create_gpadl_header(enum hv_gpadl_type type, void *kbuffer,
 			       u32 size, u32 send_offset,
-			       struct vmbus_channel_msginfo **msginfo)
+			       struct vmbus_channel_msginfo **msginfo, u32 visibility)
 {
 	int i;
 	int pagecount;
@@ -456,7 +488,7 @@ nomem:
 static int __vmbus_establish_gpadl(struct vmbus_channel *channel,
 				   enum hv_gpadl_type type, void *kbuffer,
 				   u32 size, u32 send_offset,
-				   u32 *gpadl_handle)
+				   u32 *gpadl_handle, u32 visibility)
 {
 	struct vmbus_channel_gpadl_header *gpadlmsg;
 	struct vmbus_channel_gpadl_body *gpadl_body;
@@ -470,9 +502,16 @@ static int __vmbus_establish_gpadl(struct vmbus_channel *channel,
 	next_gpadl_handle =
 		(atomic_inc_return(&vmbus_connection.next_gpadl_handle) - 1);
 
-	ret = create_gpadl_header(type, kbuffer, size, send_offset, &msginfo);
+	ret = create_gpadl_header(type, kbuffer, size, send_offset,
+				  &msginfo, visibility);
 	if (ret)
 		return ret;
+
+	ret = hv_set_mem_host_visibility(kbuffer, size, visibility);
+	if (ret) {
+		pr_warn("Failed to set host visibility.\n");
+		return ret;
+	}
 
 	init_completion(&msginfo->waitevent);
 	msginfo->waiting_channel = channel;
@@ -561,10 +600,10 @@ cleanup:
  * @gpadl_handle: some funky thing
  */
 int vmbus_establish_gpadl(struct vmbus_channel *channel, void *kbuffer,
-			  u32 size, u32 *gpadl_handle)
+			  u32 size, u32 *gpadl_handle, u32 visibility)
 {
 	return __vmbus_establish_gpadl(channel, HV_GPADL_BUFFER, kbuffer, size,
-				       0U, gpadl_handle);
+				       0U, gpadl_handle, visibility);
 }
 EXPORT_SYMBOL_GPL(vmbus_establish_gpadl);
 
@@ -662,15 +701,12 @@ static int __vmbus_open(struct vmbus_channel *newchannel,
 	newchannel->onchannel_callback = onchannelcallback;
 	newchannel->channel_callback_context = context;
 
-	if (!newchannel->max_pkt_size)
-		newchannel->max_pkt_size = VMBUS_DEFAULT_MAX_PKT_SIZE;
-
-	err = hv_ringbuffer_init(&newchannel->outbound, page, send_pages, 0);
+	err = hv_ringbuffer_init(&newchannel->outbound, page, send_pages);
 	if (err)
 		goto error_clean_ring;
 
-	err = hv_ringbuffer_init(&newchannel->inbound, &page[send_pages],
-				 recv_pages, newchannel->max_pkt_size);
+	err = hv_ringbuffer_init(&newchannel->inbound,
+				 &page[send_pages], recv_pages);
 	if (err)
 		goto error_clean_ring;
 
@@ -678,12 +714,23 @@ static int __vmbus_open(struct vmbus_channel *newchannel,
 	newchannel->ringbuffer_gpadlhandle = 0;
 
 	err = __vmbus_establish_gpadl(newchannel, HV_GPADL_RING,
-				      page_address(newchannel->ringbuffer_page),
-				      (send_pages + recv_pages) << PAGE_SHIFT,
-				      newchannel->ringbuffer_send_offset << PAGE_SHIFT,
-				      &newchannel->ringbuffer_gpadlhandle);
+			page_address(newchannel->ringbuffer_page),
+			(send_pages + recv_pages) << PAGE_SHIFT,
+			newchannel->ringbuffer_send_offset << PAGE_SHIFT,
+			&newchannel->ringbuffer_gpadlhandle,
+			VMBUS_PAGE_VISIBLE_READ_WRITE);
 	if (err)
 		goto error_clean_ring;
+
+	err = hv_ringbuffer_post_init(&newchannel->outbound,
+				      page, send_pages);
+	if (err)
+		goto error_free_gpadl;
+
+	err = hv_ringbuffer_post_init(&newchannel->inbound,
+				      &page[send_pages], recv_pages);
+	if (err)
+		goto error_free_gpadl;
 
 	/* Create and init the channel open message */
 	open_info = kzalloc(sizeof(*open_info) +
@@ -759,7 +806,9 @@ error_clean_msglist:
 error_free_info:
 	kfree(open_info);
 error_free_gpadl:
-	vmbus_teardown_gpadl(newchannel, newchannel->ringbuffer_gpadlhandle);
+	vmbus_teardown_gpadl(newchannel, newchannel->ringbuffer_gpadlhandle,
+			     page_address(newchannel->ringbuffer_page),
+			     newchannel->ringbuffer_pagecount << PAGE_SHIFT);
 	newchannel->ringbuffer_gpadlhandle = 0;
 error_clean_ring:
 	hv_ringbuffer_cleanup(&newchannel->outbound);
@@ -806,7 +855,8 @@ EXPORT_SYMBOL_GPL(vmbus_open);
 /*
  * vmbus_teardown_gpadl -Teardown the specified GPADL handle
  */
-int vmbus_teardown_gpadl(struct vmbus_channel *channel, u32 gpadl_handle)
+int vmbus_teardown_gpadl(struct vmbus_channel *channel, u32 gpadl_handle,
+			 void *kbuffer, u32 size)
 {
 	struct vmbus_channel_gpadl_teardown *msg;
 	struct vmbus_channel_msginfo *info;
@@ -859,6 +909,10 @@ post_msg_err:
 	spin_unlock_irqrestore(&vmbus_connection.channelmsg_lock, flags);
 
 	kfree(info);
+
+	if (hv_set_mem_host_visibility(kbuffer, size, VMBUS_PAGE_NOT_VISIBLE))
+		pr_warn("Fail to set mem host visibility.\n");
+
 	return ret;
 }
 EXPORT_SYMBOL_GPL(vmbus_teardown_gpadl);
@@ -935,7 +989,9 @@ static int vmbus_close_internal(struct vmbus_channel *channel)
 	/* Tear down the gpadl for the channel's ring buffer */
 	else if (channel->ringbuffer_gpadlhandle) {
 		ret = vmbus_teardown_gpadl(channel,
-					   channel->ringbuffer_gpadlhandle);
+					   channel->ringbuffer_gpadlhandle,
+					   page_address(channel->ringbuffer_page),
+					   channel->ringbuffer_pagecount << PAGE_SHIFT);
 		if (ret) {
 			pr_err("Close failed: teardown gpadl return %d\n", ret);
 			/*
@@ -1053,7 +1109,8 @@ EXPORT_SYMBOL(vmbus_sendpacket);
 int vmbus_sendpacket_pagebuffer(struct vmbus_channel *channel,
 				struct hv_page_buffer pagebuffers[],
 				u32 pagecount, void *buffer, u32 bufferlen,
-				u64 requestid)
+				u64 requestid, u8 io_type,
+				struct hv_bounce_pkt **bounce_pkt)
 {
 	int i;
 	struct vmbus_channel_packet_page_buffer desc;
@@ -1098,7 +1155,11 @@ int vmbus_sendpacket_pagebuffer(struct vmbus_channel *channel,
 	bufferlist[2].iov_base = &aligned_data;
 	bufferlist[2].iov_len = (packetlen_aligned - packetlen);
 
-	return hv_ringbuffer_write(channel, bufferlist, 3, requestid);
+	if (hv_is_isolation_supported())
+		return vmbus_sendpacket_pagebuffer_bounce(channel, &desc,
+			descsize, bufferlist, io_type, bounce_pkt, requestid);
+	else
+		return hv_ringbuffer_write(channel, bufferlist, 3, requestid);
 }
 EXPORT_SYMBOL_GPL(vmbus_sendpacket_pagebuffer);
 
@@ -1110,7 +1171,9 @@ EXPORT_SYMBOL_GPL(vmbus_sendpacket_pagebuffer);
 int vmbus_sendpacket_mpb_desc(struct vmbus_channel *channel,
 			      struct vmbus_packet_mpb_array *desc,
 			      u32 desc_size,
-			      void *buffer, u32 bufferlen, u64 requestid)
+			      void *buffer, u32 bufferlen, u64 requestid,
+			      u32 pfn_count, u8 io_type,
+			      struct hv_bounce_pkt **bounce_pkt)
 {
 	u32 packetlen;
 	u32 packetlen_aligned;
@@ -1136,7 +1199,12 @@ int vmbus_sendpacket_mpb_desc(struct vmbus_channel *channel,
 	bufferlist[2].iov_base = &aligned_data;
 	bufferlist[2].iov_len = (packetlen_aligned - packetlen);
 
-	return hv_ringbuffer_write(channel, bufferlist, 3, requestid);
+	if (hv_is_isolation_supported()) {
+		return vmbus_sendpacket_mpb_desc_bounce(channel, desc,
+			desc_size, bufferlist, io_type, bounce_pkt, requestid);
+	} else {
+		return hv_ringbuffer_write(channel, bufferlist, 3, requestid);
+	}
 }
 EXPORT_SYMBOL_GPL(vmbus_sendpacket_mpb_desc);
 

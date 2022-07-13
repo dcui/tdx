@@ -20,6 +20,7 @@
 #include <linux/hyperv.h>
 #include <linux/interrupt.h>
 
+#include <asm/mshyperv.h>
 #include "hv_trace.h"
 
 /*
@@ -56,6 +57,44 @@ union hv_monitor_trigger_state {
 		u32 rsvdz:28;
 	};
 };
+
+/*
+ * Hyper-V bounce packet. Each in-use bounce packet is mapped to a vmbus
+ * transaction and contains a list of bounce pages for that transaction.
+ */
+struct hv_bounce_pkt {
+	/* Link to the next bounce packet, when it is in the free list */
+	struct list_head link;
+	struct list_head bounce_page_head;
+	u32 flags;
+};
+
+
+/*
+ * All vmbus channels initially start with zero bounce pages and are required
+ * to set any non-zero size, if needed.
+ */
+#define HV_DEFAULT_BOUNCE_BUFFER_PAGES  0
+
+/* MIN should be a power of 2 */
+#define HV_MIN_BOUNCE_BUFFER_PAGES	64
+
+extern int hv_init_channel_ivm(struct vmbus_channel *channel);
+
+extern void hv_free_channel_ivm(struct vmbus_channel *channel);
+
+extern int vmbus_sendpacket_pagebuffer_bounce(struct vmbus_channel *channel,
+	struct vmbus_channel_packet_page_buffer *desc, u32 desc_size,
+	struct kvec *bufferlist, u8 io_type, struct hv_bounce_pkt **bounce_pkt,
+	u64 requestid);
+
+extern int vmbus_sendpacket_mpb_desc_bounce(struct vmbus_channel *channel,
+	struct vmbus_packet_mpb_array *desc, u32 desc_size,
+	struct kvec *bufferlist, u8 io_type, struct hv_bounce_pkt **bounce_pkt,
+	u64 requestid);
+
+extern void hv_pkt_bounce(struct vmbus_channel *channel,
+			  struct hv_bounce_pkt *bounce_pkt);
 
 /* struct hv_monitor_page Layout */
 /* ------------------------------------------------------ */
@@ -173,9 +212,11 @@ extern int hv_synic_cleanup(unsigned int cpu);
 /* Interface */
 
 void hv_ringbuffer_pre_init(struct vmbus_channel *channel);
+int hv_ringbuffer_post_init(struct hv_ring_buffer_info *ring_info,
+		struct page *pages, u32 page_cnt);
 
 int hv_ringbuffer_init(struct hv_ring_buffer_info *ring_info,
-		       struct page *pages, u32 pagecnt, u32 max_pkt_size);
+		       struct page *pages, u32 pagecnt);
 
 void hv_ringbuffer_cleanup(struct hv_ring_buffer_info *ring_info);
 
@@ -241,6 +282,7 @@ struct vmbus_connection {
 	 * is child->parent notification
 	 */
 	struct hv_monitor_page *monitor_pages[2];
+	void *monitor_pages_va[2];
 	struct list_head chn_msg_list;
 	spinlock_t channelmsg_lock;
 

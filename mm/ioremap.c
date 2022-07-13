@@ -12,6 +12,7 @@
 #include <linux/export.h>
 
 void __iomem *ioremap_prot(phys_addr_t addr, size_t size, unsigned long prot)
+
 {
 	unsigned long offset, vaddr;
 	phys_addr_t last_addr;

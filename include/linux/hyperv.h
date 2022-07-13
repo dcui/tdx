@@ -25,6 +25,9 @@
 #include <linux/interrupt.h>
 #include <linux/reciprocal_div.h>
 #include <asm/hyperv-tlfs.h>
+#include <linux/slab.h>
+#include <linux/mempool.h>
+#include <linux/mempool.h>
 
 #define MAX_PAGE_BUFFER_COUNT				32
 #define MAX_MULTIPAGE_BUFFER_COUNT			32 /* 128K */
@@ -181,10 +184,6 @@ struct hv_ring_buffer_info {
 	 * being freed while the ring buffer is being accessed.
 	 */
 	struct mutex ring_buffer_mutex;
-
-	/* Buffer that holds a copy of an incoming host packet */
-	void *pkt_buffer;
-	u32 pkt_buffer_size;
 };
 
 
@@ -801,8 +800,6 @@ struct vmbus_device {
 	bool allowed_in_isolated;
 };
 
-#define VMBUS_DEFAULT_MAX_PKT_SIZE 4096
-
 struct vmbus_channel {
 	struct list_head listentry;
 
@@ -1030,9 +1027,24 @@ struct vmbus_channel {
 	/* request/transaction ids for VMBus */
 	struct vmbus_requestor requestor;
 	u32 rqstor_size;
+	/*
+	 * Minimum number of bounce resources (i.e bounce packets & pages) that
+	 * should be allocated and reserved for this channel. Allocation is
+	 * permitted to go beyond this limit, and the maintenance task takes
+	 * care of releasing the extra allocated resources.
+	 */
+	u32 min_bounce_resource_count;
 
-	/* The max size of a packet on this channel */
-	u32 max_pkt_size;
+	/* The free list of bounce pages is LRU sorted based on last used */
+	struct list_head bounce_page_free_head;
+	u32 bounce_page_alloc_count;
+	struct delayed_work bounce_page_list_maintain;
+
+	struct kmem_cache *bounce_page_cache;
+	struct kmem_cache *bounce_pkt_cache;
+	struct list_head bounce_pkt_free_list_head;
+	u32 bounce_pkt_free_count;
+	spinlock_t bp_lock;
 };
 
 u64 vmbus_next_request_id(struct vmbus_channel *channel, u64 rqst_addr);
@@ -1100,6 +1112,8 @@ void vmbus_set_sc_create_callback(struct vmbus_channel *primary_channel,
 void vmbus_set_chn_rescind_callback(struct vmbus_channel *channel,
 		void (*chn_rescind_cb)(struct vmbus_channel *));
 
+extern int hv_bounce_resources_reserve(struct vmbus_channel *channel,
+				       u32 min_bounce_bytes);
 /*
  * Check if sub-channels have already been offerred. This API will be useful
  * when the driver is unloaded after establishing sub-channels. In this case,
@@ -1175,27 +1189,41 @@ extern int vmbus_sendpacket(struct vmbus_channel *channel,
 				  enum vmbus_packet_type type,
 				  u32 flags);
 
+#define IO_TYPE_WRITE	0
+#define IO_TYPE_READ	1
+#define IO_TYPE_UNKNOWN 2
+
+struct hv_bounce_pkt;
+
 extern int vmbus_sendpacket_pagebuffer(struct vmbus_channel *channel,
 					    struct hv_page_buffer pagebuffers[],
 					    u32 pagecount,
 					    void *buffer,
 					    u32 bufferlen,
-					    u64 requestid);
+					    u64 requestid,
+					    u8 io_type,
+					    struct hv_bounce_pkt **bounce_pkt);
 
 extern int vmbus_sendpacket_mpb_desc(struct vmbus_channel *channel,
 				     struct vmbus_packet_mpb_array *mpb,
 				     u32 desc_size,
 				     void *buffer,
 				     u32 bufferlen,
-				     u64 requestid);
+				     u64 requestid,
+				     u32 pfn_count,
+				     u8 io_type,
+				     struct hv_bounce_pkt **bounce_pkt);
+
 
 extern int vmbus_establish_gpadl(struct vmbus_channel *channel,
 				      void *kbuffer,
 				      u32 size,
-				      u32 *gpadl_handle);
+				      u32 *gpadl_handle,
+				      u32 visibility);
 
 extern int vmbus_teardown_gpadl(struct vmbus_channel *channel,
-				     u32 gpadl_handle);
+				u32 gpadl_handle,
+				void *kbuffer, u32 size);
 
 void vmbus_reset_channel_cb(struct vmbus_channel *channel);
 
@@ -1665,42 +1693,13 @@ static inline u32 hv_pkt_datalen(const struct vmpacket_descriptor *desc)
 
 
 struct vmpacket_descriptor *
-hv_pkt_iter_first_raw(struct vmbus_channel *channel);
-
-struct vmpacket_descriptor *
 hv_pkt_iter_first(struct vmbus_channel *channel);
 
 struct vmpacket_descriptor *
 __hv_pkt_iter_next(struct vmbus_channel *channel,
-		   const struct vmpacket_descriptor *pkt,
-		   bool copy);
+		   const struct vmpacket_descriptor *pkt);
 
 void hv_pkt_iter_close(struct vmbus_channel *channel);
-
-static inline struct vmpacket_descriptor *
-hv_pkt_iter_next_pkt(struct vmbus_channel *channel,
-		     const struct vmpacket_descriptor *pkt,
-		     bool copy)
-{
-	struct vmpacket_descriptor *nxt;
-
-	nxt = __hv_pkt_iter_next(channel, pkt, copy);
-	if (!nxt)
-		hv_pkt_iter_close(channel);
-
-	return nxt;
-}
-
-/*
- * Get next packet descriptor without copying it out of the ring buffer
- * If at end of list, return NULL and update host.
- */
-static inline struct vmpacket_descriptor *
-hv_pkt_iter_next_raw(struct vmbus_channel *channel,
-		     const struct vmpacket_descriptor *pkt)
-{
-	return hv_pkt_iter_next_pkt(channel, pkt, false);
-}
 
 /*
  * Get next packet descriptor from iterator
@@ -1710,7 +1709,13 @@ static inline struct vmpacket_descriptor *
 hv_pkt_iter_next(struct vmbus_channel *channel,
 		 const struct vmpacket_descriptor *pkt)
 {
-	return hv_pkt_iter_next_pkt(channel, pkt, true);
+	struct vmpacket_descriptor *nxt;
+
+	nxt = __hv_pkt_iter_next(channel, pkt);
+	if (!nxt)
+		hv_pkt_iter_close(channel);
+
+	return nxt;
 }
 
 #define foreach_vmbus_pkt(pkt, channel) \

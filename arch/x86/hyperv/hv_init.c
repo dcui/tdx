@@ -46,6 +46,9 @@ static int hv_cpu_init(unsigned int cpu)
 {
 	union hv_vp_assist_msr_contents msr = { 0 };
 	struct hv_vp_assist_page **hvp = &hv_vp_assist_page[smp_processor_id()];
+	u64 ghcb_gpa;
+	void *ghcb_va;
+	void **ghcb_base;
 	int ret;
 
 	ret = hv_common_cpu_init(cpu);
@@ -83,6 +86,17 @@ static int hv_cpu_init(unsigned int cpu)
 			msr.enable = 1;
 			wrmsrl(HV_X64_MSR_VP_ASSIST_PAGE, msr.as_uint64);
 		}
+	}
+
+	if (ms_hyperv.ghcb_base) {
+		rdmsrl(MSR_AMD64_SEV_ES_GHCB, ghcb_gpa);
+
+		ghcb_va = ioremap_cache(ghcb_gpa, HV_HYP_PAGE_SIZE);
+		if (!ghcb_va)
+			return -ENOMEM;
+
+		ghcb_base = (void **)this_cpu_ptr(ms_hyperv.ghcb_base);
+		*ghcb_base = ghcb_va;
 	}
 
 	return 0;
@@ -183,6 +197,10 @@ static int hv_cpu_die(unsigned int cpu)
 {
 	struct hv_reenlightenment_control re_ctrl;
 	unsigned int new_cpu;
+	unsigned long flags;
+	void **input_arg;
+	void *pg;
+	void **ghcb_va = NULL;
 
 	hv_common_cpu_die(cpu);
 
@@ -202,6 +220,20 @@ static int hv_cpu_die(unsigned int cpu)
 		}
 		wrmsrl(HV_X64_MSR_VP_ASSIST_PAGE, msr.as_uint64);
 	}
+
+	if (ms_hyperv.ghcb_base) {
+		ghcb_va = (void **)this_cpu_ptr(ms_hyperv.ghcb_base);
+		if (*ghcb_va)
+			iounmap(*ghcb_va);
+		*ghcb_va = NULL;
+	}
+
+	local_irq_restore(flags);
+
+	free_pages((unsigned long)pg, hv_root_partition ? 1 : 0);
+
+	if (hv_vp_assist_page && hv_vp_assist_page[cpu])
+		wrmsrl(HV_X64_MSR_VP_ASSIST_PAGE, 0);
 
 	if (hv_reenlightenment_cb == NULL)
 		return 0;
@@ -301,25 +333,6 @@ static struct syscore_ops hv_syscore_ops = {
 	.resume		= hv_resume,
 };
 
-static void (* __initdata old_setup_percpu_clockev)(void);
-
-static void __init hv_stimer_setup_percpu_clockev(void)
-{
-	/*
-	 * Ignore any errors in setting up stimer clockevents
-	 * as we can run with the LAPIC timer as a fallback.
-	 */
-	(void)hv_stimer_alloc(false);
-
-	/*
-	 * Still register the LAPIC timer, because the direct-mode STIMER is
-	 * not supported by old versions of Hyper-V. This also allows users
-	 * to switch to LAPIC timer via /sys, if they want to.
-	 */
-	if (old_setup_percpu_clockev)
-		old_setup_percpu_clockev();
-}
-
 static void __init hv_get_partition_id(void)
 {
 	struct hv_get_partition_id *output_page;
@@ -350,7 +363,10 @@ void __init hyperv_init(void)
 {
 	u64 guest_id;
 	union hv_x64_msr_hypercall_contents hypercall_msr;
-	int cpuhp;
+	int cpuhp, i;
+	u64 ghcb_gpa;
+	void *ghcb_va;
+	void **ghcb_base;
 
 	if (x86_hyper_type != X86_HYPER_MS_HYPERV)
 		return;
@@ -382,9 +398,27 @@ void __init hyperv_init(void)
 			VMALLOC_END, GFP_KERNEL, PAGE_KERNEL_ROX,
 			VM_FLUSH_RESET_PERMS, NUMA_NO_NODE,
 			__builtin_return_address(0));
-	if (hv_hypercall_pg == NULL) {
-		wrmsrl(HV_X64_MSR_GUEST_OS_ID, 0);
-		goto remove_cpuhp_state;
+	if (hv_hypercall_pg == NULL)
+		goto clean_guest_os_id;
+
+	if (hv_isolation_type_snp()) {
+		ms_hyperv.ghcb_base = alloc_percpu(void *);
+		if (!ms_hyperv.ghcb_base)
+			goto clean_guest_os_id;
+
+		rdmsrl(MSR_AMD64_SEV_ES_GHCB, ghcb_gpa);
+		ghcb_va = ioremap_cache(ghcb_gpa, HV_HYP_PAGE_SIZE);
+		if (!ghcb_va) {
+			free_percpu(ms_hyperv.ghcb_base);
+			ms_hyperv.ghcb_base = NULL;
+			goto clean_guest_os_id;
+		}
+
+		ghcb_base = (void **)this_cpu_ptr(ms_hyperv.ghcb_base);
+		*ghcb_base = ghcb_va;
+
+		/* Hyper-V requires to write guest os id via ghcb in SNP IVM. */
+		hv_ghcb_msr_write(HV_X64_MSR_GUEST_OS_ID, guest_id);
 	}
 
 	rdmsrl(HV_X64_MSR_HYPERCALL, hypercall_msr.as_uint64);
@@ -420,14 +454,10 @@ void __init hyperv_init(void)
 	}
 
 	/*
-	 * hyperv_init() is called before LAPIC is initialized: see
-	 * apic_intr_mode_init() -> x86_platform.apic_post_init() and
-	 * apic_bsp_setup() -> setup_local_APIC(). The direct-mode STIMER
-	 * depends on LAPIC, so hv_stimer_alloc() should be called from
-	 * x86_init.timers.setup_percpu_clockev.
+	 * Ignore any errors in setting up stimer clockevents
+	 * as we can run with the LAPIC timer as a fallback.
 	 */
-	old_setup_percpu_clockev = x86_init.timers.setup_percpu_clockev;
-	x86_init.timers.setup_percpu_clockev = hv_stimer_setup_percpu_clockev;
+	(void)hv_stimer_alloc(false);
 
 	hv_apic_init();
 
@@ -455,7 +485,8 @@ void __init hyperv_init(void)
 	hv_query_ext_cap(0);
 	return;
 
-remove_cpuhp_state:
+clean_guest_os_id:
+	wrmsrl(HV_X64_MSR_GUEST_OS_ID, 0);
 	cpuhp_remove_state(cpuhp);
 free_vp_assist_page:
 	kfree(hv_vp_assist_page);
@@ -475,6 +506,7 @@ void hyperv_cleanup(void)
 
 	/* Reset our OS id */
 	wrmsrl(HV_X64_MSR_GUEST_OS_ID, 0);
+	hv_ghcb_msr_write(HV_X64_MSR_GUEST_OS_ID, 0);
 
 	/*
 	 * Reset hypercall page reference before reset the page,
@@ -482,6 +514,9 @@ void hyperv_cleanup(void)
 	 * panic the kernel for using invalid hypercall page
 	 */
 	hv_hypercall_pg = NULL;
+
+	if (ms_hyperv.ghcb_base)
+		free_percpu(ms_hyperv.ghcb_base);
 
 	/* Reset the hypercall page */
 	hypercall_msr.as_uint64 = 0;
@@ -545,16 +580,3 @@ bool hv_is_hyperv_initialized(void)
 	return hypercall_msr.enable;
 }
 EXPORT_SYMBOL_GPL(hv_is_hyperv_initialized);
-
-enum hv_isolation_type hv_get_isolation_type(void)
-{
-	if (!(ms_hyperv.priv_high & HV_ISOLATION))
-		return HV_ISOLATION_TYPE_NONE;
-	return FIELD_GET(HV_ISOLATION_TYPE, ms_hyperv.isolation_config_b);
-}
-EXPORT_SYMBOL_GPL(hv_get_isolation_type);
-
-bool hv_is_isolation_supported(void)
-{
-	return hv_get_isolation_type() != HV_ISOLATION_TYPE_NONE;
-}
