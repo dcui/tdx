@@ -524,6 +524,35 @@ SYM_CODE_START(\asmsym)
 _ASM_NOKPROBE(\asmsym)
 SYM_CODE_END(\asmsym)
 .endm
+
+/*
+ * #HV entry
+ */
+.macro idtentry_hv vector asmsym cfunc
+SYM_CODE_START(\asmsym)
+	UNWIND_HINT_IRET_REGS
+	ASM_CLAC
+
+	pushq	$-1			/* ORIG_RAX: no syscall to restart */
+
+	testb	$3, CS-ORIG_RAX(%rsp)
+	jnz	.Lfrom_usermode_switch_stack_\@
+
+	call	paranoid_entry
+
+	UNWIND_HINT_REGS
+
+	movq	%rsp, %rdi		/* pt_regs pointer */
+	call	\cfunc
+
+	jmp	paranoid_exit
+
+.Lfrom_usermode_switch_stack_\@:
+	idtentry_body \cfunc, has_error_code=0
+
+_ASM_NOKPROBE(\asmsym)
+SYM_CODE_END(\asmsym)
+.endm
 #endif
 
 /*

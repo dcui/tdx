@@ -16,6 +16,7 @@
 #include <linux/tty.h>
 #include <linux/module.h>
 #include <linux/spinlock.h>
+#include <linux/console.h>
 
 struct ttyprintk_port {
 	struct tty_port port;
@@ -212,5 +213,30 @@ static void __exit ttyprintk_exit(void)
 
 device_initcall(ttyprintk_init);
 module_exit(ttyprintk_exit);
+
+static struct tty_driver *hv_sev_console_device(struct console *c, int *index)
+{
+	if (c->index != 0)
+		return NULL;
+
+	*index = 0;
+
+	return ttyprintk_driver;
+}
+
+struct console hv_sev_console = {
+	.name =		"ttySEV",
+	.device =	hv_sev_console_device,
+	.flags =	CON_PRINTBUFFER | CON_ANYTIME,
+	.index =	-1,
+};
+
+static int __init hv_sev_console_init(void)
+{
+	register_console(&hv_sev_console);
+
+	return 0;
+}
+console_initcall(hv_sev_console_init);
 
 MODULE_LICENSE("GPL");

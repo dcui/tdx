@@ -16,6 +16,7 @@
 #define GHCB_PROTOCOL_MAX	1ULL
 #define GHCB_DEFAULT_USAGE	0ULL
 
+#define GHCB_SEV_GHCB_RESP_CODE(v)      ((v) & 0xfff)
 #define	VMGEXIT()			{ asm volatile("rep; vmmcall\n\r"); }
 
 enum es_result {
@@ -59,6 +60,10 @@ extern void vc_no_ghcb(void);
 extern void vc_boot_ghcb(void);
 extern bool handle_vc_boot_ghcb(struct pt_regs *regs);
 
+struct ghcb_state {
+	struct ghcb *ghcb;
+};
+
 #ifdef CONFIG_AMD_MEM_ENCRYPT
 extern struct static_key_false sev_es_enable_key;
 extern void __sev_es_ist_enter(struct pt_regs *regs);
@@ -81,12 +86,21 @@ static __always_inline void sev_es_nmi_complete(void)
 		__sev_es_nmi_complete();
 }
 extern int __init sev_es_efi_map_ghcbs(pgd_t *pgd);
+extern struct ghcb *sev_es_get_ghcb(struct ghcb_state *state);
+extern void sev_es_put_ghcb(struct ghcb_state *state);
+extern int vmgexit_page_state_change(struct ghcb *ghcb, void *data);
+extern int vmgexit_hv_doorbell_page(struct ghcb *ghcb, u64 op, u64 pa);
+
 #else
 static inline void sev_es_ist_enter(struct pt_regs *regs) { }
 static inline void sev_es_ist_exit(void) { }
 static inline int sev_es_setup_ap_jump_table(struct real_mode_header *rmh) { return 0; }
 static inline void sev_es_nmi_complete(void) { }
 static inline int sev_es_efi_map_ghcbs(pgd_t *pgd) { return 0; }
+static inline struct ghcb *sev_es_get_ghcb(struct ghcb_state *state) { return NULL; }
+static inline void sev_es_put_ghcb(struct ghcb_state *state) { }
+static inline int vmgexit_page_state_change(struct ghcb *ghcb, void *data) { return 0; }
+static inline int vmgexit_hv_doorbell_page(struct ghcb *ghcb, u64 op, u64 pa) { return 0; }
 #endif
 
 #endif

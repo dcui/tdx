@@ -21,6 +21,8 @@
 #include <asm/sections.h>
 #include <asm/io.h>
 #include <asm/setup_arch.h>
+#include <asm/mem_encrypt.h>
+#include <asm/sev-snp.h>
 
 static struct resource system_rom_resource = {
 	.name	= "System ROM",
@@ -201,6 +203,19 @@ void __init probe_roms(void)
 	unsigned long start, length, upper;
 	unsigned char c;
 	int i;
+
+	/*
+	 * The ROM memory is not part of the E820 system RAM and is not prevalidated by the BIOS.
+	 * The kernel page table maps the ROM region as encrypted memory, the SEV-SNP requires
+	 * the all the encrypted memory must be validated before the access.
+	 */
+	if (sev_snp_active()) {
+		unsigned long n, paddr;
+
+		n = ((system_rom_resource.end + 1) - video_rom_resource.start) >> PAGE_SHIFT;
+		paddr = video_rom_resource.start;
+		early_snp_set_memory_private((unsigned long)__va(paddr), paddr, n);
+	}
 
 	/* video rom */
 	upper = adapter_rom_resources[0].start;
