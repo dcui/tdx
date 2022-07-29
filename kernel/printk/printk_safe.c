@@ -83,8 +83,12 @@ asmlinkage int vprintk(const char *fmt, va_list args)
 		return vkdb_printf(KDB_MSGSRC_PRINTK, fmt, args);
 #endif
 
-	if (sev_snp_active())
-		return hv_sev_printf(fmt, args);
+	/*
+	 * Disable sev debug function here and this cause
+	 * VM shuts down on the ACI host.
+	 */
+//	if (sev_snp_active())
+//		hv_sev_printf(fmt, args);
 
 	/*
 	 * Use the main logbuf even in NMI. But avoid calling console
