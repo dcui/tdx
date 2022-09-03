@@ -52,6 +52,23 @@ static inline u64 _tdx_hypercall(u64 fn, u64 r12, u64 r13, u64 r14, u64 r15)
 	return __tdx_hypercall(&args, 0);
 }
 
+static inline u64 _tdx_hypercall_return_r11(u64 fn, u64 r12, u64 r13, u64 r14, u64 r15, u64 *r11)
+{
+	struct tdx_hypercall_args args = {
+		.r10 = TDX_HYPERCALL_STANDARD,
+		.r11 = fn,
+		.r12 = r12,
+		.r13 = r13,
+		.r14 = r14,
+		.r15 = r15,
+	};
+	u64 ret;
+
+	ret = __tdx_hypercall(&args, TDX_HCALL_HAS_OUTPUT);
+	*r11 = args.r11;
+	return ret;
+}
+
 /* Called from __tdx_hypercall() for unrecoverable failure */
 void __tdx_hypercall_failed(void)
 {
@@ -691,6 +708,7 @@ static bool try_accept_one(phys_addr_t *start, unsigned long len,
 	return true;
 }
 
+#define TDX_VMCALL_STATUS_RETRY             1
 /*
  * Inform the VMM of the guest's intent for this physical page: shared with
  * the VMM or private to the guest.  The VMM is expected to change its mapping
@@ -700,6 +718,8 @@ static bool tdx_enc_status_changed(unsigned long vaddr, int numpages, bool enc)
 {
 	phys_addr_t start = __pa(vaddr);
 	phys_addr_t end   = __pa(vaddr + numpages * PAGE_SIZE);
+	u64 ret;
+	u64 r11 = 0;
 
 	if (!enc) {
 		/* Set the shared (decrypted) bits: */
@@ -712,7 +732,79 @@ static bool tdx_enc_status_changed(unsigned long vaddr, int numpages, bool enc)
 	 * can be found in TDX Guest-Host-Communication Interface (GHCI),
 	 * section "TDG.VP.VMCALL<MapGPA>"
 	 */
-	if (_tdx_hypercall(TDVMCALL_MAP_GPA, start, end - start, 0, 0))
+	//if (_tdx_hypercall(TDVMCALL_MAP_GPA, start, end - start, 0, 0))
+again:
+	ret = _tdx_hypercall_return_r11(TDVMCALL_MAP_GPA, start, end - start, 0, 0, &r11);
+	if (ret == TDX_VMCALL_STATUS_RETRY) {
+		start = r11;
+		if (!enc)
+			start |= cc_mkdec(0);
+		goto again;
+	}
+
+	if (ret)
+		return false;
+
+	/* private->shared conversion  requires only MapGPA call */
+	if (!enc)
+		return true;
+
+	/*
+	 * For shared->private conversion, accept the page using
+	 * TDX_ACCEPT_PAGE TDX module call.
+	 */
+	start = __pa(vaddr);
+	while (start < end) {
+		unsigned long len = end - start;
+
+		/*
+		 * Try larger accepts first. It gives chance to VMM to keep
+		 * 1G/2M SEPT entries where possible and speeds up process by
+		 * cutting number of hypercalls (if successful).
+		 */
+
+		if (try_accept_one(&start, len, PG_LEVEL_1G))
+			continue;
+
+		if (try_accept_one(&start, len, PG_LEVEL_2M))
+			continue;
+
+		if (!try_accept_one(&start, len, PG_LEVEL_4K))
+			return false;
+	}
+
+	return true;
+}
+
+bool tdx_enc_status_changed_gpa(u64 gpa, int numpages, bool enc)
+{
+	phys_addr_t start = gpa;
+	phys_addr_t end   = gpa + numpages * PAGE_SIZE;
+	u64 ret;
+	u64 r11 = 0;
+
+	if (!enc) {
+		/* Set the shared (decrypted) bits: */
+		start |= cc_mkdec(0);
+		end   |= cc_mkdec(0);
+	}
+
+	/*
+	 * Notify the VMM about page mapping conversion. More info about ABI
+	 * can be found in TDX Guest-Host-Communication Interface (GHCI),
+	 * section "TDG.VP.VMCALL<MapGPA>"
+	 */
+	//if (_tdx_hypercall(TDVMCALL_MAP_GPA, start, end - start, 0, 0))
+again:
+	ret = _tdx_hypercall_return_r11(TDVMCALL_MAP_GPA, start, end - start, 0, 0, &r11);
+	if (ret == TDX_VMCALL_STATUS_RETRY) {
+		start = r11;
+		if (!enc)
+			start |= cc_mkdec(0);
+		goto again;
+	}
+
+	if (ret)
 		return false;
 
 	/* private->shared conversion  requires only MapGPA call */

@@ -203,3 +203,43 @@ SYM_FUNC_START(__tdx_hypercall)
 	REACHABLE
 	jmp .Lpanic
 SYM_FUNC_END(__tdx_hypercall)
+
+SYM_FUNC_START(__tdcall_hyperv)
+        FRAME_BEGIN
+
+        /*
+                               %rdi,       %rsi,        %rdx
+        rax = __tdcall_hyperv(control, output_addr, input_addr);
+
+
+         * 0    => RAX = TDCALL leaf
+         * RDI  => R10 = control value
+         * RSI  => R8  = output addr
+         * RDX  => RDX = input address   ==> no change.
+         * MASK => RCX = 0x0d04 //pass rdx, r8, r10, r11 to Hyper-V
+         */
+
+        xor %eax, %eax /* load TDG.VP.VMCALL code */
+	xor %r11, %r11 /* clear return code register */
+
+        mov %rdi, %r10 /* load call code into call code register */
+	mov %rsi, %r8  /* output addr */
+        mov $0x0d04, %ecx /* pass rdx, r8, r10, r11 to Hyper-V*/
+
+        tdcall
+
+	testq %rax, %rax
+	jne .Lpanic2
+
+        /* Save R11 to output pointer */
+        movq %r11, %rax
+
+        FRAME_END
+
+        RET
+.Lpanic2:
+	call __tdx_hypercall_failed
+	/* __tdx_hypercall_failed never returns */
+	REACHABLE
+	jmp .Lpanic2
+SYM_FUNC_END(__tdcall_hyperv)

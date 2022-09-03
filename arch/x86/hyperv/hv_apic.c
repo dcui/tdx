@@ -277,6 +277,7 @@ static void hv_send_ipi_self(int vector)
 
 void __init hv_apic_init(void)
 {
+#if 0
 	if (ms_hyperv.hints & HV_X64_CLUSTER_IPI_RECOMMENDED) {
 		pr_info("Hyper-V: Using IPI hypercalls\n");
 		/*
@@ -291,6 +292,7 @@ void __init hv_apic_init(void)
 		apic->send_IPI_all = hv_send_ipi_all;
 		apic->send_IPI_self = hv_send_ipi_self;
 	}
+#endif
 
 	if (ms_hyperv.hints & HV_X64_APIC_ACCESS_RECOMMENDED) {
 		pr_info("Hyper-V: Using enlightened APIC (%s mode)",
