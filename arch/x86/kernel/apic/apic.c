@@ -1776,9 +1776,11 @@ static void __x2apic_enable(void)
 {
 	u64 msr;
 
+	printk("cdx: %s, line %d\n", __func__, __LINE__);
 	rdmsrl(MSR_IA32_APICBASE, msr);
 	if (msr & X2APIC_ENABLE)
 		return;
+	printk("cdx: %s, line %d\n", __func__, __LINE__);
 	wrmsrl(MSR_IA32_APICBASE, msr | X2APIC_ENABLE);
 	printk_once(KERN_INFO "x2apic enabled\n");
 }
@@ -1837,18 +1839,24 @@ static __init void x2apic_disable(void)
 
 static __init void x2apic_enable(void)
 {
+	printk("cdx: %s, line %d\n", __func__, __LINE__);
 	if (x2apic_state != X2APIC_OFF)
 		return;
 
+	printk("cdx: %s, line %d\n", __func__, __LINE__);
 	x2apic_mode = 1;
 	x2apic_state = X2APIC_ON;
+	printk("cdx: %s, line %d\n", __func__, __LINE__);
 	__x2apic_enable();
+	printk("cdx: %s, line %d\n", __func__, __LINE__);
 }
 
 static __init void try_to_enable_x2apic(int remap_mode)
 {
+	printk("cdx: %s, line %d\n", __func__, __LINE__);
 	if (x2apic_state == X2APIC_DISABLED)
 		return;
+	printk("cdx: %s, line %d\n", __func__, __LINE__);
 
 	if (remap_mode != IRQ_REMAP_X2APIC_MODE) {
 		u32 apic_limit = 255;
@@ -1857,6 +1865,7 @@ static __init void try_to_enable_x2apic(int remap_mode)
 		 * Using X2APIC without IR is not architecturally supported
 		 * on bare metal but may be supported in guests.
 		 */
+		printk("cdx: %s, line %d\n", __func__, __LINE__);
 		if (!x86_init.hyper.x2apic_available()) {
 			pr_info("x2apic: IRQ remapping doesn't support X2APIC mode\n");
 			x2apic_disable();
@@ -1881,7 +1890,9 @@ static __init void try_to_enable_x2apic(int remap_mode)
 		x2apic_set_max_apicid(apic_limit);
 		x2apic_phys = 1;
 	}
+	printk("cdx: %s, line %d\n", __func__, __LINE__);
 	x2apic_enable();
+	printk("cdx: %s, line %d\n", __func__, __LINE__);
 }
 
 void __init check_x2apic(void)
@@ -1891,6 +1902,7 @@ void __init check_x2apic(void)
 		x2apic_mode = 1;
 		x2apic_state = X2APIC_ON;
 	} else if (!boot_cpu_has(X86_FEATURE_X2APIC)) {
+		WARN(1, "cdx: x2apic_enabled is faluse\n");
 		x2apic_state = X2APIC_DISABLED;
 	}
 }
@@ -1915,12 +1927,14 @@ void __init enable_IR_x2apic(void)
 	unsigned long flags;
 	int ret, ir_stat;
 
+	printk("cdx: %s, line %d\n", __func__, __LINE__);
 	if (skip_ioapic_setup) {
 		pr_info("Not enabling interrupt remapping due to skipped IO-APIC setup\n");
 		return;
 	}
 
 	ir_stat = irq_remapping_prepare();
+	printk("cdx: %s, line %d, ir_stat=%d\n", __func__, __LINE__, ir_stat);
 	if (ir_stat < 0 && !x2apic_supported())
 		return;
 
@@ -1935,8 +1949,11 @@ void __init enable_IR_x2apic(void)
 	mask_ioapic_entries();
 
 	/* If irq_remapping_prepare() succeeded, try to enable it */
-	if (ir_stat >= 0)
+	if (ir_stat >= 0) {
+		printk("cdx: %s, line %d, ir_stat=%d\n", __func__, __LINE__, ir_stat);
 		ir_stat = irq_remapping_enable();
+		printk("cdx: %s, line %d, ir_stat=%d\n", __func__, __LINE__, ir_stat);
+	}
 	/* ir_stat contains the remap mode or an error code */
 	try_to_enable_x2apic(ir_stat);
 
@@ -2081,9 +2098,11 @@ void __init init_apic_mappings(void)
 		pr_info("TSC deadline timer available\n");
 
 	if (x2apic_mode) {
+		printk("cdx: init_apic_mappings:  boot_cpu_physical_apicid = read_apic_id()\n");
 		boot_cpu_physical_apicid = read_apic_id();
 		return;
 	}
+	WARN(1, "cdx: ----------------- init_apic_mappings\n");
 
 	/* If no local APIC can be found return early */
 	if (!smp_found_config && detect_init_APIC()) {

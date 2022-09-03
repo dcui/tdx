@@ -171,6 +171,7 @@ void __init default_setup_apic_routing(void)
 
 void __init generic_apic_probe(void)
 {
+#error generic_apic_probe: line 174
 	if (!cmdline_apic) {
 		struct apic **drv;
 
@@ -192,6 +193,7 @@ int __init default_acpi_madt_oem_check(char *oem_id, char *oem_table_id)
 {
 	struct apic **drv;
 
+#error cdx: 32
 	for (drv = __apicdrivers; drv < __apicdrivers_end; drv++) {
 		if (!(*drv)->acpi_madt_oem_check)
 			continue;

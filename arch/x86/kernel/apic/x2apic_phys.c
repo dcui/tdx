@@ -8,6 +8,7 @@
 int x2apic_phys;
 
 static struct apic apic_x2apic_phys;
+//extern struct apic apic_x2apic_phys; //cdx
 static u32 x2apic_max_apicid __ro_after_init;
 
 void __init x2apic_set_max_apicid(u32 apicid)
@@ -36,7 +37,9 @@ static bool x2apic_fadt_phys(void)
 
 static int x2apic_acpi_madt_oem_check(char *oem_id, char *oem_table_id)
 {
-	return x2apic_enabled() && (x2apic_phys || x2apic_fadt_phys());
+	int ret = x2apic_enabled() && (x2apic_phys || x2apic_fadt_phys());
+	printk("cdx: x2apic_acpi_madt_oem_check: %d, %d, %d\n", ret, x2apic_enabled(), x2apic_phys);
+	return ret;
 }
 
 static void x2apic_send_IPI(int cpu, int vector)
@@ -97,10 +100,17 @@ static void init_x2apic_ldr(void)
 
 static int x2apic_phys_probe(void)
 {
+	int ret;
+	printk("cdx: x2apic_phys_probe: 1\n");
 	if (x2apic_mode && (x2apic_phys || x2apic_fadt_phys()))
 		return 1;
 
-	return apic == &apic_x2apic_phys;
+	printk("cdx: x2apic_phys_probe: 2\n");
+
+	ret = apic == &apic_x2apic_phys;
+	printk("cdx: x2apic_phys_probe: 3, ret=%d\n", ret);
+
+	return ret;
 }
 
 /* Common x2apic functions, also used by x2apic_cluster */
@@ -152,7 +162,9 @@ void x2apic_send_IPI_self(int vector)
 	apic_write(APIC_SELF_IPI, vector);
 }
 
+//cdx
 static struct apic apic_x2apic_phys __ro_after_init = {
+//struct apic apic_x2apic_phys __ro_after_init = {
 
 	.name				= "physical x2apic",
 	.probe				= x2apic_phys_probe,

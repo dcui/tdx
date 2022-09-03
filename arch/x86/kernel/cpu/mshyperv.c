@@ -159,16 +159,23 @@ static uint32_t  __init ms_hyperv_platform(void)
 	u32 eax;
 	u32 hyp_signature[3];
 
+	printk("cdx: ms_hyperv_platform: 0\n");
 	if (!boot_cpu_has(X86_FEATURE_HYPERVISOR))
 		return 0;
 
+	printk("cdx: ms_hyperv_platform: 1\n");
 	cpuid(HYPERV_CPUID_VENDOR_AND_MAX_FUNCTIONS,
 	      &eax, &hyp_signature[0], &hyp_signature[1], &hyp_signature[2]);
 
+	printk("cdx: ms_hyperv_platform: 2: eax=0x%x, %08x, %08x, %08x\n", eax, hyp_signature[0], hyp_signature[1], hyp_signature[2]);
 	if (eax < HYPERV_CPUID_MIN || eax > HYPERV_CPUID_MAX ||
-	    memcmp("Microsoft Hv", hyp_signature, 12))
+	    memcmp("Microsoft Hv", hyp_signature, 12)) {
+		//WARN_ON(1);
 		return 0;
+		//return HYPERV_CPUID_VENDOR_AND_MAX_FUNCTIONS; //cdx
+	}
 
+	printk("cdx: ms_hyperv_platform: 3\n");
 	/* HYPERCALL and VP_INDEX MSRs are mandatory for all features. */
 	eax = cpuid_eax(HYPERV_CPUID_FEATURES);
 	if (!(eax & HV_MSR_HYPERCALL_AVAILABLE)) {
@@ -180,6 +187,7 @@ static uint32_t  __init ms_hyperv_platform(void)
 		return 0;
 	}
 
+	printk("cdx: ms_hyperv_platform: 4\n");
 	return HYPERV_CPUID_VENDOR_AND_MAX_FUNCTIONS;
 }
 
@@ -268,6 +276,7 @@ static void __init ms_hyperv_init_platform(void)
 	/*
 	 * Extract the features and hints
 	 */
+	//cdx: [    0.000000] Hyper-V: features 0x2e7f, partition flags: 0x388030, hints 0x20e24, misc 0xbed7b2
 	ms_hyperv.features = cpuid_eax(HYPERV_CPUID_FEATURES);
 	ms_hyperv.priv_high = cpuid_ebx(HYPERV_CPUID_FEATURES);
 	ms_hyperv.misc_features = cpuid_edx(HYPERV_CPUID_FEATURES);
@@ -443,8 +452,11 @@ static void __init ms_hyperv_init_platform(void)
 	 * have 8-bit APIC id.
 	 */
 # ifdef CONFIG_X86_X2APIC
-	if (x2apic_supported())
+	if (x2apic_supported()) {
 		x2apic_phys = 1;
+	} else WARN_ON(1);
+#else
+#error xxxxxxxxxxxxxxxxxxxxxxxxx2
 # endif
 
 	/* Register Hyper-V specific clocksource */
@@ -463,7 +475,9 @@ static void __init ms_hyperv_init_platform(void)
 
 static bool __init ms_hyperv_x2apic_available(void)
 {
-	return x2apic_supported();
+	bool ret = x2apic_supported();
+	WARN(!ret, "cdx: ms_hyperv_x2apic_available: ret=%d\n", ret);
+	return ret;
 }
 
 /*
@@ -481,10 +495,12 @@ static bool __init ms_hyperv_msi_ext_dest_id(void)
 	u32 eax;
 
 	eax = cpuid_eax(HYPERV_CPUID_VIRT_STACK_INTERFACE);
+	WARN(eax != HYPERV_VS_INTERFACE_EAX_SIGNATURE, "cdx: ms_hyperv_msi_ext_dest_id:1: eax=0x%x\n", eax);
 	if (eax != HYPERV_VS_INTERFACE_EAX_SIGNATURE)
 		return false;
 
 	eax = cpuid_eax(HYPERV_CPUID_VIRT_STACK_PROPERTIES);
+	WARN(eax & HYPERV_VS_PROPERTIES_EAX_EXTENDED_IOAPIC_RTE, "cdx: ms_hyperv_msi_ext_dest_id:2: eax=0x%x\n", eax);
 	return eax & HYPERV_VS_PROPERTIES_EAX_EXTENDED_IOAPIC_RTE;
 }
 

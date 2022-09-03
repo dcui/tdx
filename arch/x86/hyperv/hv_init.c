@@ -52,9 +52,11 @@ static int hyperv_init_ghcb(void)
 	void *ghcb_va;
 	void **ghcb_base;
 
+	printk("cdx: %s, line %d\n", __func__, __LINE__);
 	if (!hv_isolation_type_snp())
 		return 0;
 
+	printk("cdx: %s, line %d\n", __func__, __LINE__);
 	if (!hv_ghcb_pg)
 		return -EINVAL;
 
@@ -63,6 +65,7 @@ static int hyperv_init_ghcb(void)
 	 * returned by MSR_AMD64_SEV_ES_GHCB is above shared
 	 * memory boundary and map it here.
 	 */
+	printk("cdx: %s, line %d\n", __func__, __LINE__);
 	rdmsrl(MSR_AMD64_SEV_ES_GHCB, ghcb_gpa);
 	ghcb_va = memremap(ghcb_gpa, HV_HYP_PAGE_SIZE, MEMREMAP_WB);
 	if (!ghcb_va)
@@ -71,6 +74,7 @@ static int hyperv_init_ghcb(void)
 	ghcb_base = (void **)this_cpu_ptr(hv_ghcb_pg);
 	*ghcb_base = ghcb_va;
 
+	printk("cdx: %s, line %d\n", __func__, __LINE__);
 	return 0;
 }
 
@@ -80,19 +84,24 @@ static int hv_cpu_init(unsigned int cpu)
 	struct hv_vp_assist_page **hvp = &hv_vp_assist_page[smp_processor_id()];
 	int ret;
 
+	printk("cdx: %s, line %d\n", __func__, __LINE__);
 	ret = hv_common_cpu_init(cpu);
+	printk("cdx: %s, line %d\n", __func__, __LINE__);
 	if (ret)
 		return ret;
 
+	printk("cdx: %s, line %d\n", __func__, __LINE__);
 	if (!hv_vp_assist_page)
 		return 0;
 
+	printk("cdx: %s, line %d\n", __func__, __LINE__);
 	if (!*hvp) {
 		if (hv_root_partition) {
 			/*
 			 * For root partition we get the hypervisor provided VP assist
 			 * page, instead of allocating a new page.
 			 */
+			printk("cdx: %s, line %d\n", __func__, __LINE__);
 			rdmsrl(HV_X64_MSR_VP_ASSIST_PAGE, msr.as_uint64);
 			*hvp = memremap(msr.pfn <<
 					HV_X64_MSR_VP_ASSIST_PAGE_ADDRESS_SHIFT,
@@ -106,6 +115,7 @@ static int hv_cpu_init(unsigned int cpu)
 			 * in hv_cpu_die(), otherwise a CPU may not be stopped in the
 			 * case of CPU offlining and the VM will hang.
 			 */
+			printk("cdx: %s, line %d\n", __func__, __LINE__);
 			*hvp = __vmalloc(PAGE_SIZE, GFP_KERNEL | __GFP_ZERO);
 			if (*hvp)
 				msr.pfn = vmalloc_to_pfn(*hvp);
@@ -117,6 +127,7 @@ static int hv_cpu_init(unsigned int cpu)
 		}
 	}
 
+	printk("cdx: %s, line %d\n", __func__, __LINE__);
 	return hyperv_init_ghcb();
 }
 
@@ -392,12 +403,14 @@ void __init hyperv_init(void)
 	union hv_x64_msr_hypercall_contents hypercall_msr;
 	int cpuhp;
 
+	printk("cdx: %s, line %d\n", __func__, __LINE__);
 	if (x86_hyper_type != X86_HYPER_MS_HYPERV)
 		return;
 
 	if (hv_common_init())
 		return;
 
+	printk("cdx: %s, line %d\n", __func__, __LINE__);
 	hv_vp_assist_page = kcalloc(num_possible_cpus(),
 				    sizeof(*hv_vp_assist_page), GFP_KERNEL);
 	if (!hv_vp_assist_page) {
@@ -405,8 +418,10 @@ void __init hyperv_init(void)
 		goto common_free;
 	}
 
+	printk("cdx: %s, line %d\n", __func__, __LINE__);
 	if (hv_isolation_type_snp()) {
 		/* Negotiate GHCB Version. */
+		printk("cdx: %s, line %d\n", __func__, __LINE__);
 		if (!hv_ghcb_negotiate_protocol())
 			hv_ghcb_terminate(SEV_TERM_SET_GEN,
 					  GHCB_SEV_ES_PROT_UNSUPPORTED);
@@ -416,8 +431,10 @@ void __init hyperv_init(void)
 			goto free_vp_assist_page;
 	}
 
+	printk("cdx: %s, line %d\n", __func__, __LINE__);
 	cpuhp = cpuhp_setup_state(CPUHP_AP_ONLINE_DYN, "x86/hyperv_init:online",
 				  hv_cpu_init, hv_cpu_die);
+	printk("cdx: %s, line %d\n", __func__, __LINE__);
 	if (cpuhp < 0)
 		goto free_ghcb_page;
 
@@ -426,19 +443,24 @@ void __init hyperv_init(void)
 	 * 1. Register the guest ID
 	 * 2. Enable the hypercall and register the hypercall page
 	 */
+	printk("cdx: %s, line %d\n", __func__, __LINE__);
 	guest_id = generate_guest_id(0, LINUX_VERSION_CODE, 0);
 	wrmsrl(HV_X64_MSR_GUEST_OS_ID, guest_id);
+	printk("cdx: %s, line %d\n", __func__, __LINE__);
 
 	/* Hyper-V requires to write guest os id via ghcb in SNP IVM. */
 	hv_ghcb_msr_write(HV_X64_MSR_GUEST_OS_ID, guest_id);
+	printk("cdx: %s, line %d\n", __func__, __LINE__);
 
 	hv_hypercall_pg = __vmalloc_node_range(PAGE_SIZE, 1, VMALLOC_START,
 			VMALLOC_END, GFP_KERNEL, PAGE_KERNEL_ROX,
 			VM_FLUSH_RESET_PERMS, NUMA_NO_NODE,
 			__builtin_return_address(0));
+	printk("cdx: %s, line %d\n", __func__, __LINE__);
 	if (hv_hypercall_pg == NULL)
 		goto clean_guest_os_id;
 
+	printk("cdx: %s, line %d\n", __func__, __LINE__);
 	rdmsrl(HV_X64_MSR_HYPERCALL, hypercall_msr.as_uint64);
 	hypercall_msr.enable = 1;
 
@@ -456,6 +478,7 @@ void __init hyperv_init(void)
 		 * so it is populated with code, then copy the code to an
 		 * executable page.
 		 */
+		printk("cdx: %s, line %d\n", __func__, __LINE__);
 		wrmsrl(HV_X64_MSR_HYPERCALL, hypercall_msr.as_uint64);
 
 		pg = vmalloc_to_page(hv_hypercall_pg);
@@ -467,6 +490,7 @@ void __init hyperv_init(void)
 		memunmap(src);
 		kunmap(pg);
 	} else {
+		printk("cdx: %s, line %d\n", __func__, __LINE__);
 		hypercall_msr.guest_physical_address = vmalloc_to_pfn(hv_hypercall_pg);
 		wrmsrl(HV_X64_MSR_HYPERCALL, hypercall_msr.as_uint64);
 	}
@@ -478,17 +502,24 @@ void __init hyperv_init(void)
 	 * depends on LAPIC, so hv_stimer_alloc() should be called from
 	 * x86_init.timers.setup_percpu_clockev.
 	 */
+	printk("cdx: %s, line %d\n", __func__, __LINE__);
 	old_setup_percpu_clockev = x86_init.timers.setup_percpu_clockev;
+	printk("cdx: %s, line %d\n", __func__, __LINE__);
 	x86_init.timers.setup_percpu_clockev = hv_stimer_setup_percpu_clockev;
+	printk("cdx: %s, line %d\n", __func__, __LINE__);
 
 	hv_apic_init();
+	printk("cdx: %s, line %d\n", __func__, __LINE__);
 
 	x86_init.pci.arch_init = hv_pci_init;
+	printk("cdx: %s, line %d\n", __func__, __LINE__);
 
 	register_syscore_ops(&hv_syscore_ops);
+	printk("cdx: %s, line %d\n", __func__, __LINE__);
 
 	hyperv_init_cpuhp = cpuhp;
 
+	printk("cdx: %s, line %d\n", __func__, __LINE__);
 	if (cpuid_ebx(HYPERV_CPUID_FEATURES) & HV_ACCESS_PARTITION_ID)
 		hv_get_partition_id();
 
@@ -504,7 +535,9 @@ void __init hyperv_init(void)
 #endif
 
 	/* Query the VMs extended capability once, so that it can be cached. */
+	printk("cdx: %s, line %d\n", __func__, __LINE__);
 	hv_query_ext_cap(0);
+	printk("cdx: %s, line %d\n", __func__, __LINE__);
 
 #ifdef CONFIG_SWIOTLB
 	/*

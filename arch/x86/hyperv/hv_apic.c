@@ -68,6 +68,7 @@ static u32 hv_apic_read(u32 reg)
 		return reg_val;
 
 	default:
+		WARN(1, "cdx: reg=%d\n", reg);
 		return native_apic_mem_read(reg);
 	}
 }
@@ -277,7 +278,10 @@ static void hv_send_ipi_self(int vector)
 
 void __init hv_apic_init(void)
 {
+	printk("cdx: %s, line %d\n", __func__, __LINE__);
 	if (ms_hyperv.hints & HV_X64_CLUSTER_IPI_RECOMMENDED) {
+	//if (1) {
+		printk("cdx: %s, line %d\n", __func__, __LINE__);
 		pr_info("Hyper-V: Using IPI hypercalls\n");
 		/*
 		 * Set the IPI entry points.
@@ -293,6 +297,8 @@ void __init hv_apic_init(void)
 	}
 
 	if (ms_hyperv.hints & HV_X64_APIC_ACCESS_RECOMMENDED) {
+	//if (1) {
+		printk("cdx: %s, line %d\n", __func__, __LINE__);
 		pr_info("Hyper-V: Using enlightened APIC (%s mode)",
 			x2apic_enabled() ? "x2apic" : "xapic");
 		/*
@@ -308,6 +314,7 @@ void __init hv_apic_init(void)
 		 */
 		apic_set_eoi_write(hv_apic_eoi_write);
 		if (!x2apic_enabled()) {
+			printk("cdx: %s, line %d\n", __func__, __LINE__);
 			apic->read      = hv_apic_read;
 			apic->write     = hv_apic_write;
 			apic->icr_write = hv_apic_icr_write;

@@ -5,6 +5,7 @@
 #define pr_fmt(fmt)     "tdx: " fmt
 
 #include <linux/cpufeature.h>
+#include <linux/delay.h>
 #include <asm/coco.h>
 #include <asm/tdx.h>
 #include <asm/vmx.h>
@@ -275,6 +276,8 @@ static int handle_cpuid(struct pt_regs *regs, struct ve_info *ve)
 		.r13 = regs->cx,
 	};
 
+	bool print = regs->ax == 0x40000000 || regs->ax == 0x1 ||
+		!(regs->ax >= 0x40000100 && regs->ax <= 0x4000ff00);
 	/*
 	 * Only allow VMM to control range reserved for hypervisor
 	 * communication.
@@ -282,6 +285,7 @@ static int handle_cpuid(struct pt_regs *regs, struct ve_info *ve)
 	 * Return all-zeros for any CPUID outside the range. It matches CPU
 	 * behaviour for non-supported leaf.
 	 */
+	if (print) printk("cdx: handle_cpuid: 0: ax=%lx\n", regs->ax);
 	if (regs->ax < 0x40000000 || regs->ax > 0x4FFFFFFF) {
 		regs->ax = regs->bx = regs->cx = regs->dx = 0;
 		return ve_instr_len(ve);
@@ -292,14 +296,26 @@ static int handle_cpuid(struct pt_regs *regs, struct ve_info *ve)
 	 * ABI can be found in TDX Guest-Host-Communication Interface
 	 * (GHCI), section titled "VP.VMCALL<Instruction.CPUID>".
 	 */
+	if (print)  printk("cdx: handle_cpuid: 1: ax=%lx\n", regs->ax);
 	if (__tdx_hypercall(&args, TDX_HCALL_HAS_OUTPUT))
 		return -EIO;
 
+	if (print) printk("cdx: handle_cpuid: 2: ax=%lx\n", regs->ax);
 	/*
 	 * As per TDX GHCI CPUID ABI, r12-r15 registers contain contents of
 	 * EAX, EBX, ECX, EDX registers after the CPUID instruction execution.
 	 * So copy the register contents back to pt_regs.
 	 */
+#if 0
+	if (regs->ax == 0x40000000) {
+		args.r12 = 0x4000000c;
+		args.r13 = 0x7263694d;
+		args.r14 = 0x666f736f;
+		args.r15 = 0x76482074;
+	}
+#endif
+
+	if (print)  printk("cdx: handle_cpuid: 3: ax=%llx, bx=%llx, cx=%llx, dx=%llx\n", args.r12, args.r13, args.r14, args.r15);
 	regs->ax = args.r12;
 	regs->bx = args.r13;
 	regs->cx = args.r14;
@@ -517,7 +533,14 @@ __init bool tdx_early_handle_ve(struct pt_regs *regs)
 	struct ve_info ve;
 	int insn_len;
 
+	while (1) { mdelay(1); } //cdx
+
+	WARN_ONCE(1, "cdx: tdx_early_handle_ve: exit_reason=%lld\n", ve.exit_reason);
 	tdx_get_ve_info(&ve);
+
+	if (ve.exit_reason == EXIT_REASON_CPUID)
+		while (1)
+			;
 
 	if (ve.exit_reason != EXIT_REASON_IO_INSTRUCTION)
 		return false;

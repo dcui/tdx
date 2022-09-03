@@ -20,9 +20,12 @@ void __init default_setup_apic_routing(void)
 {
 	struct apic **drv;
 
+	printk("cdx: %s, line %d\n", __func__, __LINE__);
 	enable_IR_x2apic();
+	printk("cdx: %s, line %d\n", __func__, __LINE__);
 
 	for (drv = __apicdrivers; drv < __apicdrivers_end; drv++) {
+		printk("cdx: %s, line %d, drv=%s\n", __func__, __LINE__, (*drv)->name);
 		if ((*drv)->probe && (*drv)->probe()) {
 			if (apic != *drv) {
 				apic = *drv;
@@ -38,7 +41,9 @@ int __init default_acpi_madt_oem_check(char *oem_id, char *oem_table_id)
 {
 	struct apic **drv;
 
+	printk("cdx: %s, line %d\n", __func__, __LINE__);
 	for (drv = __apicdrivers; drv < __apicdrivers_end; drv++) {
+		printk("cdx: %s, line %d, drv=%s, apic=%s\n", __func__, __LINE__, (*drv)->name, apic == NULL ? "NNN" : apic->name);
 		if ((*drv)->acpi_madt_oem_check(oem_id, oem_table_id)) {
 			if (apic != *drv) {
 				apic = *drv;

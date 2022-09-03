@@ -1006,11 +1006,13 @@ static void init_speculation_control(struct cpuinfo_x86 *c)
 
 void get_cpu_cap(struct cpuinfo_x86 *c)
 {
-	u32 eax, ebx, ecx, edx;
+	u32 eax = 0x11223344, ebx=0x55667788, ecx=0xFFEEDDCC, edx = 0x99AABBCC;
 
 	/* Intel-defined flags: level 0x00000001 */
 	if (c->cpuid_level >= 0x00000001) {
+		printk("cdx: get_cpu_cap: 1\n");
 		cpuid(0x00000001, &eax, &ebx, &ecx, &edx);
+		WARN_ONCE(1, "cdx: get_cpu_cap: 2, eax=0x%x, ebx=0x%x, ecx=0x%x, edx=0x%x\n", eax, ebx, ecx, edx);
 
 		c->x86_capability[CPUID_1_ECX] = ecx;
 		c->x86_capability[CPUID_1_EDX] = edx;

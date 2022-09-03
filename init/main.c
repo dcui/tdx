@@ -1097,8 +1097,12 @@ asmlinkage __visible void __init __no_sanitize_address start_kernel(void)
 	setup_per_cpu_pageset();
 	numa_policy_init();
 	acpi_early_init();
-	if (late_time_init)
+	printk("cdx: %s, line %d\n", __func__, __LINE__);
+	if (late_time_init) {
+		printk("cdx: %s, line %d\n", __func__, __LINE__);
 		late_time_init();
+	}
+	printk("cdx: %s, line %d\n", __func__, __LINE__);
 	sched_clock_init();
 	calibrate_delay();
 	pid_idr_init();

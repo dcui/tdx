@@ -253,14 +253,20 @@ extern void __init check_x2apic(void);
 extern void x2apic_setup(void);
 static inline int x2apic_enabled(void)
 {
-	return boot_cpu_has(X86_FEATURE_X2APIC) && apic_is_x2apic_enabled();
+	bool ret;
+	ret =  boot_cpu_has(X86_FEATURE_X2APIC) && apic_is_x2apic_enabled();
+	WARN(!ret, "cdx: x2apic_enabled: %d, %d\n", boot_cpu_has(X86_FEATURE_X2APIC), apic_is_x2apic_enabled());
+	return ret;
 }
 
 #define x2apic_supported()	(boot_cpu_has(X86_FEATURE_X2APIC))
+//cdx
+//#define x2apic_supported()	(true)
 #else /* !CONFIG_X86_X2APIC */
 static inline void check_x2apic(void) { }
 static inline void x2apic_setup(void) { }
 static inline int x2apic_enabled(void) { return 0; }
+#error jjjjjjjjjjjjjjjj-123
 
 #define x2apic_mode		(0)
 #define	x2apic_supported()	(0)
@@ -483,7 +489,12 @@ extern struct apic apic_noop;
 
 static inline unsigned int read_apic_id(void)
 {
-	unsigned int reg = apic_read(APIC_ID);
+	//unsigned int reg = apic_read(APIC_ID);
+	unsigned int reg;
+
+	printk("cdx: read_apic_id: apic 1: = %s\n", apic->name);
+	reg = apic_read(APIC_ID);
+	printk("cdx: read_apic_id: apic 2: = %s, reg=%d\n", apic->name, reg);
 
 	return apic->get_apic_id(reg);
 }
