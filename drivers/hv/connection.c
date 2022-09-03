@@ -232,9 +232,9 @@ int vmbus_connect(void)
 	vmbus_connection.monitor_pages_original[1]
 		= vmbus_connection.monitor_pages[1];
 	vmbus_connection.monitor_pages_pa[0]
-		= virt_to_phys(vmbus_connection.monitor_pages[0]);
+		= virt_to_phys(vmbus_connection.monitor_pages[0]) + BIT_ULL(47);
 	vmbus_connection.monitor_pages_pa[1]
-		= virt_to_phys(vmbus_connection.monitor_pages[1]);
+		= virt_to_phys(vmbus_connection.monitor_pages[1]) + BIT_ULL(47);
 
 	if (hv_is_isolation_supported()) {
 		ret = set_memory_decrypted((unsigned long)

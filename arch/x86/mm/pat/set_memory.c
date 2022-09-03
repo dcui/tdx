@@ -2120,6 +2120,8 @@ static int __set_memory_enc_pgtable(unsigned long addr, int numpages, bool enc)
 
 static int __set_memory_enc_dec(unsigned long addr, int numpages, bool enc)
 {
+	return __set_memory_enc_pgtable(addr, numpages, enc);
+#if 0
 	if (hv_is_isolation_supported())
 		return hv_set_mem_host_visibility(addr, numpages, !enc);
 
@@ -2127,6 +2129,7 @@ static int __set_memory_enc_dec(unsigned long addr, int numpages, bool enc)
 		return __set_memory_enc_pgtable(addr, numpages, enc);
 
 	return 0;
+#endif
 }
 
 int set_memory_encrypted(unsigned long addr, int numpages)

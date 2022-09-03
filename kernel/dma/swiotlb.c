@@ -248,12 +248,14 @@ void __init swiotlb_update_mem_attributes(void)
 	struct io_tlb_mem *mem = &io_tlb_default_mem;
 	void *vaddr;
 	unsigned long bytes;
+	int ret;
 
 	if (!mem->nslabs || mem->late_alloc)
 		return;
 	vaddr = phys_to_virt(mem->start);
 	bytes = PAGE_ALIGN(mem->nslabs << IO_TLB_SHIFT);
-	set_memory_decrypted((unsigned long)vaddr, bytes >> PAGE_SHIFT);
+	ret = set_memory_decrypted((unsigned long)vaddr, bytes >> PAGE_SHIFT);
+	WARN(ret, "swiotlb_update_mem_attributes: ret=%d, va=0x%px, size-in-bytes=0x%lx\n", ret, vaddr, bytes);
 
 	mem->vaddr = swiotlb_mem_remap(mem, bytes);
 	if (!mem->vaddr)

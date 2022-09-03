@@ -18,6 +18,7 @@
 #include <linux/clockchips.h>
 #include <linux/delay.h>
 #include <linux/interrupt.h>
+#include <linux/set_memory.h>
 #include <clocksource/hyperv_timer.h>
 #include <asm/mshyperv.h>
 #include "hyperv_vmbus.h"
@@ -168,6 +169,17 @@ int hv_synic_alloc(void)
 			pr_err("Unable to allocate post msg page\n");
 			goto err;
 		}
+
+
+		BUG_ON(set_memory_decrypted((unsigned long)hv_cpu->synic_message_page, 1) != 0);
+
+		BUG_ON(set_memory_decrypted((unsigned long)hv_cpu->synic_event_page, 1) != 0);
+
+		BUG_ON(set_memory_decrypted((unsigned long)hv_cpu->post_msg_page, 1) != 0);
+
+		memset(hv_cpu->synic_message_page, 0, PAGE_SIZE);
+		memset(hv_cpu->synic_event_page, 0, PAGE_SIZE);
+		memset(hv_cpu->post_msg_page, 0, PAGE_SIZE);
 	}
 
 	return 0;
@@ -223,8 +235,16 @@ void hv_synic_enable_regs(unsigned int cpu)
 		if (!hv_cpu->synic_message_page)
 			pr_err("Fail to map syinc message page.\n");
 	} else {
-		simp.base_simp_gpa = virt_to_phys(hv_cpu->synic_message_page)
+		simp.base_simp_gpa = (BIT_ULL(47) + virt_to_phys(hv_cpu->synic_message_page))
 			>> HV_HYP_PAGE_SHIFT;
+
+#if 0
+		hv_cpu->synic_message_page
+			= memremap(simp.base_simp_gpa << HV_HYP_PAGE_SHIFT,
+				   HV_HYP_PAGE_SIZE, MEMREMAP_WB);
+		if (!hv_cpu->synic_message_page)
+			pr_err("Fail to map syinc message page.\n");
+#endif
 	}
 
 	hv_set_register(HV_REGISTER_SIMP, simp.as_uint64);
@@ -241,8 +261,17 @@ void hv_synic_enable_regs(unsigned int cpu)
 		if (!hv_cpu->synic_event_page)
 			pr_err("Fail to map syinc event page.\n");
 	} else {
-		siefp.base_siefp_gpa = virt_to_phys(hv_cpu->synic_event_page)
+		siefp.base_siefp_gpa = (BIT_ULL(47) + virt_to_phys(hv_cpu->synic_event_page))
 			>> HV_HYP_PAGE_SHIFT;
+
+#if 0
+		hv_cpu->synic_event_page =
+			memremap(siefp.base_siefp_gpa << HV_HYP_PAGE_SHIFT,
+				 HV_HYP_PAGE_SIZE, MEMREMAP_WB);
+
+		if (!hv_cpu->synic_event_page)
+			pr_err("Fail to map syinc event page.\n");
+#endif
 	}
 
 	hv_set_register(HV_REGISTER_SIEFP, siefp.as_uint64);

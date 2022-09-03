@@ -84,6 +84,7 @@ static int hv_cpu_init(unsigned int cpu)
 	if (ret)
 		return ret;
 
+#if 0
 	if (!hv_vp_assist_page)
 		return 0;
 
@@ -116,6 +117,7 @@ static int hv_cpu_init(unsigned int cpu)
 			wrmsrl(HV_X64_MSR_VP_ASSIST_PAGE, msr.as_uint64);
 		}
 	}
+#endif
 
 	return hyperv_init_ghcb();
 }
@@ -226,6 +228,7 @@ static int hv_cpu_die(unsigned int cpu)
 
 	hv_common_cpu_die(cpu);
 
+#if 0
 	if (hv_vp_assist_page && hv_vp_assist_page[cpu]) {
 		union hv_vp_assist_msr_contents msr = { 0 };
 		if (hv_root_partition) {
@@ -242,6 +245,7 @@ static int hv_cpu_die(unsigned int cpu)
 		}
 		wrmsrl(HV_X64_MSR_VP_ASSIST_PAGE, msr.as_uint64);
 	}
+#endif
 
 	if (hv_reenlightenment_cb == NULL)
 		return 0;
@@ -389,7 +393,7 @@ static void __init hv_get_partition_id(void)
 void __init hyperv_init(void)
 {
 	u64 guest_id;
-	union hv_x64_msr_hypercall_contents hypercall_msr;
+	//union hv_x64_msr_hypercall_contents hypercall_msr;
 	int cpuhp;
 
 	if (x86_hyper_type != X86_HYPER_MS_HYPERV)
@@ -398,12 +402,14 @@ void __init hyperv_init(void)
 	if (hv_common_init())
 		return;
 
+#if 0
 	hv_vp_assist_page = kcalloc(num_possible_cpus(),
 				    sizeof(*hv_vp_assist_page), GFP_KERNEL);
 	if (!hv_vp_assist_page) {
 		ms_hyperv.hints &= ~HV_X64_ENLIGHTENED_VMCS_RECOMMENDED;
 		goto common_free;
 	}
+#endif
 
 	if (hv_isolation_type_snp()) {
 		/* Negotiate GHCB Version. */
@@ -432,6 +438,7 @@ void __init hyperv_init(void)
 	/* Hyper-V requires to write guest os id via ghcb in SNP IVM. */
 	hv_ghcb_msr_write(HV_X64_MSR_GUEST_OS_ID, guest_id);
 
+#if 0
 	hv_hypercall_pg = __vmalloc_node_range(PAGE_SIZE, 1, VMALLOC_START,
 			VMALLOC_END, GFP_KERNEL, PAGE_KERNEL_ROX,
 			VM_FLUSH_RESET_PERMS, NUMA_NO_NODE,
@@ -470,6 +477,7 @@ void __init hyperv_init(void)
 		hypercall_msr.guest_physical_address = vmalloc_to_pfn(hv_hypercall_pg);
 		wrmsrl(HV_X64_MSR_HYPERCALL, hypercall_msr.as_uint64);
 	}
+#endif
 
 	/*
 	 * hyperv_init() is called before LAPIC is initialized: see
@@ -512,13 +520,14 @@ void __init hyperv_init(void)
 	 * space. Map function doesn't work in the early place and so
 	 * call swiotlb_update_mem_attributes() here.
 	 */
+
 	if (hv_is_isolation_supported())
 		swiotlb_update_mem_attributes();
 #endif
 
 	return;
 
-clean_guest_os_id:
+//clean_guest_os_id:
 	wrmsrl(HV_X64_MSR_GUEST_OS_ID, 0);
 	hv_ghcb_msr_write(HV_X64_MSR_GUEST_OS_ID, 0);
 	cpuhp_remove_state(cpuhp);
@@ -527,7 +536,7 @@ free_ghcb_page:
 free_vp_assist_page:
 	kfree(hv_vp_assist_page);
 	hv_vp_assist_page = NULL;
-common_free:
+//common_free:
 	hv_common_free();
 }
 
@@ -576,7 +585,7 @@ void hyperv_report_panic(struct pt_regs *regs, long err, bool in_die)
 	 * registers to report, but if we miss it (e.g. on BUG()) we need
 	 * to report it on 'panic'.
 	 */
-	if (panic_reported)
+	if (0 && panic_reported)
 		return;
 	panic_reported = true;
 
@@ -597,6 +606,7 @@ EXPORT_SYMBOL_GPL(hyperv_report_panic);
 
 bool hv_is_hyperv_initialized(void)
 {
+#if 0
 	union hv_x64_msr_hypercall_contents hypercall_msr;
 
 	/*
@@ -614,5 +624,8 @@ bool hv_is_hyperv_initialized(void)
 	rdmsrl(HV_X64_MSR_HYPERCALL, hypercall_msr.as_uint64);
 
 	return hypercall_msr.enable;
+#else
+	return true;
+#endif
 }
 EXPORT_SYMBOL_GPL(hv_is_hyperv_initialized);
