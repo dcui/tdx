@@ -86,7 +86,9 @@ unsigned long long notrace sched_clock(void)
 	unsigned int seq;
 	struct clock_read_data *rd;
 
+	printk("cdx: %s, line %d\n", __func__, __LINE__);
 	do {
+		printk("cdx: %s, line %d\n", __func__, __LINE__);
 		rd = sched_clock_read_begin(&seq);
 
 		cyc = (rd->read_sched_clock() - rd->epoch_cyc) &
@@ -94,6 +96,7 @@ unsigned long long notrace sched_clock(void)
 		res = rd->epoch_ns + cyc_to_ns(cyc, rd->mult, rd->shift);
 	} while (sched_clock_read_retry(seq));
 
+	printk("cdx: %s, line %d\n", __func__, __LINE__);
 	return res;
 }
 

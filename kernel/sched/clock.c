@@ -61,6 +61,7 @@
  */
 notrace unsigned long long __weak sched_clock(void)
 {
+	printk("cdx: %s, line %d\n", __func__, __LINE__);
 	return (unsigned long long)(jiffies - INITIAL_JIFFIES)
 					* (NSEC_PER_SEC / HZ);
 }
@@ -265,7 +266,9 @@ notrace static u64 sched_clock_local(struct sched_clock_data *scd)
 	u64 now, clock, old_clock, min_clock, max_clock, gtod;
 	s64 delta;
 
+//	printk("cdx: %s, line %d\n", __func__, __LINE__);
 again:
+	//printk("cdx: %s, line %d\n", __func__, __LINE__);
 	now = sched_clock();
 	delta = now - scd->tick_raw;
 	if (unlikely(delta < 0))
@@ -287,9 +290,11 @@ again:
 	clock = wrap_max(clock, min_clock);
 	clock = wrap_min(clock, max_clock);
 
+	//printk("cdx: %s, line %d\n", __func__, __LINE__);
 	if (!try_cmpxchg64(&scd->clock, &old_clock, clock))
 		goto again;
 
+	//printk("cdx: %s, line %d\n", __func__, __LINE__);
 	return clock;
 }
 
@@ -365,21 +370,27 @@ notrace u64 sched_clock_cpu(int cpu)
 	struct sched_clock_data *scd;
 	u64 clock;
 
+	//printk("cdx: %s, line %d\n", __func__, __LINE__);
 	if (sched_clock_stable())
 		return sched_clock() + __sched_clock_offset;
 
+	//printk("cdx: %s, line %d\n", __func__, __LINE__);
 	if (!static_branch_likely(&sched_clock_running))
 		return sched_clock();
 
+	//printk("cdx: %s, line %d\n", __func__, __LINE__);
 	preempt_disable_notrace();
 	scd = cpu_sdc(cpu);
+	//printk("cdx: %s, line %d\n", __func__, __LINE__);
 
 	if (cpu != smp_processor_id())
 		clock = sched_clock_remote(scd);
 	else
 		clock = sched_clock_local(scd);
+	//printk("cdx: %s, line %d\n", __func__, __LINE__);
 	preempt_enable_notrace();
 
+	//printk("cdx: %s, line %d\n", __func__, __LINE__);
 	return clock;
 }
 EXPORT_SYMBOL_GPL(sched_clock_cpu);
@@ -447,6 +458,7 @@ notrace void sched_clock_idle_wakeup_event(void)
 EXPORT_SYMBOL_GPL(sched_clock_idle_wakeup_event);
 
 #else /* CONFIG_HAVE_UNSTABLE_SCHED_CLOCK */
+#error ttttttttttttttttttttttttttttt
 
 void __init sched_clock_init(void)
 {

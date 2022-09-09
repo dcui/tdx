@@ -57,16 +57,18 @@ static bool acpi_verify_table_checksum __initdata_or_acpilib = false;
 
 void acpi_table_print_madt_entry(struct acpi_subtable_header *header)
 {
+	printk("cdx: %s, line %d\n", __func__, __LINE__);
 	if (!header)
 		return;
 
+	printk("cdx: %s, line %d, type=%d\n", __func__, __LINE__, header->type);
 	switch (header->type) {
 
 	case ACPI_MADT_TYPE_LOCAL_APIC:
 		{
 			struct acpi_madt_local_apic *p =
 			    (struct acpi_madt_local_apic *)header;
-			pr_debug("LAPIC (acpi_id[0x%02x] lapic_id[0x%02x] %s)\n",
+			pr_info("LAPIC (acpi_id[0x%02x] lapic_id[0x%02x] %s)\n",
 				 p->processor_id, p->id,
 				 (p->lapic_flags & ACPI_MADT_ENABLED) ? "enabled" : "disabled");
 		}
@@ -76,7 +78,7 @@ void acpi_table_print_madt_entry(struct acpi_subtable_header *header)
 		{
 			struct acpi_madt_local_x2apic *p =
 			    (struct acpi_madt_local_x2apic *)header;
-			pr_debug("X2APIC (apic_id[0x%02x] uid[0x%02x] %s)\n",
+			pr_info("X2APIC (apic_id[0x%02x] uid[0x%02x] %s)\n",
 				 p->local_apic_id, p->uid,
 				 (p->lapic_flags & ACPI_MADT_ENABLED) ? "enabled" : "disabled");
 		}
@@ -86,7 +88,7 @@ void acpi_table_print_madt_entry(struct acpi_subtable_header *header)
 		{
 			struct acpi_madt_io_apic *p =
 			    (struct acpi_madt_io_apic *)header;
-			pr_debug("IOAPIC (id[0x%02x] address[0x%08x] gsi_base[%d])\n",
+			pr_info("IOAPIC (id[0x%02x] address[0x%08x] gsi_base[%d])\n",
 				 p->id, p->address, p->global_irq_base);
 		}
 		break;
@@ -160,7 +162,7 @@ void acpi_table_print_madt_entry(struct acpi_subtable_header *header)
 		{
 			struct acpi_madt_io_sapic *p =
 			    (struct acpi_madt_io_sapic *)header;
-			pr_debug("IOSAPIC (id[0x%x] address[%p] gsi_base[%d])\n",
+			pr_info("IOSAPIC (id[0x%x] address[%p] gsi_base[%d])\n",
 				 p->id, (void *)(unsigned long)p->address,
 				 p->global_irq_base);
 		}
@@ -170,7 +172,7 @@ void acpi_table_print_madt_entry(struct acpi_subtable_header *header)
 		{
 			struct acpi_madt_local_sapic *p =
 			    (struct acpi_madt_local_sapic *)header;
-			pr_debug("LSAPIC (acpi_id[0x%02x] lsapic_id[0x%02x] lsapic_eid[0x%02x] %s)\n",
+			pr_info("LSAPIC (acpi_id[0x%02x] lsapic_id[0x%02x] lsapic_eid[0x%02x] %s)\n",
 				 p->processor_id, p->id, p->eid,
 				 (p->lapic_flags & ACPI_MADT_ENABLED) ? "enabled" : "disabled");
 		}
@@ -192,7 +194,7 @@ void acpi_table_print_madt_entry(struct acpi_subtable_header *header)
 		{
 			struct acpi_madt_generic_interrupt *p =
 				(struct acpi_madt_generic_interrupt *)header;
-			pr_debug("GICC (acpi_id[0x%04x] address[%llx] MPIDR[0x%llx] %s)\n",
+			pr_info("GICC (acpi_id[0x%04x] address[%llx] MPIDR[0x%llx] %s)\n",
 				 p->uid, p->base_address,
 				 p->arm_mpidr,
 				 (p->flags & ACPI_MADT_ENABLED) ? "enabled" : "disabled");
@@ -204,7 +206,7 @@ void acpi_table_print_madt_entry(struct acpi_subtable_header *header)
 		{
 			struct acpi_madt_generic_distributor *p =
 				(struct acpi_madt_generic_distributor *)header;
-			pr_debug("GIC Distributor (gic_id[0x%04x] address[%llx] gsi_base[%d])\n",
+			pr_info("GIC Distributor (gic_id[0x%04x] address[%llx] gsi_base[%d])\n",
 				 p->gic_id, p->base_address,
 				 p->global_irq_base);
 		}
@@ -327,8 +329,10 @@ static int __init_or_acpilib acpi_parse_entries_array(
 	int errs = 0;
 	int i;
 
+	//printk("cdx: %s, line %d\n", __func__, __LINE__);
 	table_end = (unsigned long)table_header + table_header->length;
 
+//	printk("cdx: %s, line %d\n", __func__, __LINE__);
 	/* Parse all entries looking for a match. */
 
 	entry.type = acpi_get_subtable_type(id);
@@ -336,11 +340,14 @@ static int __init_or_acpilib acpi_parse_entries_array(
 	    ((unsigned long)table_header + table_size);
 	subtable_len = acpi_get_subtable_header_length(&entry);
 
+//	printk("cdx: %s, line %d\n", __func__, __LINE__);
 	while (((unsigned long)entry.hdr) + subtable_len  < table_end) {
+//		printk("cdx: %s, line %d\n", __func__, __LINE__);
 		if (max_entries && count >= max_entries)
 			break;
 
 		for (i = 0; i < proc_num; i++) {
+//			printk("cdx: %s, line %d\n", __func__, __LINE__);
 			if (acpi_get_entry_type(&entry) != proc[i].id)
 				continue;
 			if (!has_handler(&proc[i]) ||
@@ -353,23 +360,29 @@ static int __init_or_acpilib acpi_parse_entries_array(
 			proc[i].count++;
 			break;
 		}
+//		printk("cdx: %s, line %d\n", __func__, __LINE__);
 		if (i != proc_num)
 			count++;
 
+//		printk("cdx: %s, line %d\n", __func__, __LINE__);
 		/*
 		 * If entry->length is 0, break from this loop to avoid
 		 * infinite loop.
 		 */
+//		printk("cdx: %s, line %d\n", __func__, __LINE__);
 		entry_len = acpi_get_entry_length(&entry);
 		if (entry_len == 0) {
 			pr_err("[%4.4s:0x%02x] Invalid zero length\n", id, proc->id);
 			return -EINVAL;
 		}
 
+//		printk("cdx: %s, line %d\n", __func__, __LINE__);
 		entry.hdr = (union acpi_subtable_headers *)
 		    ((unsigned long)entry.hdr + entry_len);
+//		printk("cdx: %s, line %d\n", __func__, __LINE__);
 	}
 
+//	printk("cdx: %s, line %d\n", __func__, __LINE__);
 	if (max_entries && count > max_entries) {
 		pr_warn("[%4.4s:0x%02x] found the maximum %i entries\n",
 			id, proc->id, count);
@@ -386,28 +399,38 @@ int __init_or_acpilib acpi_table_parse_entries_array(
 	int count;
 	u32 instance = 0;
 
+	//printk("cdx: %s, line %d\n", __func__, __LINE__);
 	if (acpi_disabled)
 		return -ENODEV;
 
+//	printk("cdx: %s, line %d\n", __func__, __LINE__);
 	if (!id)
 		return -EINVAL;
 
+//	printk("cdx: %s, line %d\n", __func__, __LINE__);
 	if (!table_size)
 		return -EINVAL;
 
+//	printk("cdx: %s, line %d\n", __func__, __LINE__);
 	if (!strncmp(id, ACPI_SIG_MADT, 4))
 		instance = acpi_apic_instance;
 
+//	printk("cdx: %s, line %d\n", __func__, __LINE__);
 	acpi_get_table(id, instance, &table_header);
+//	printk("cdx: %s, line %d\n", __func__, __LINE__);
 	if (!table_header) {
-		pr_debug("%4.4s not present\n", id);
+		//pr_debug("%4.4s not present\n", id);
+		pr_err("%4.4s not present\n", id);
 		return -ENODEV;
 	}
 
+//	printk("cdx: %s, line %d\n", __func__, __LINE__);
 	count = acpi_parse_entries_array(id, table_size, table_header,
 			proc, proc_num, max_entries);
 
+//	printk("cdx: %s, line %d, cont=%d\n", __func__, __LINE__, count);
 	acpi_put_table(table_header);
+//	printk("cdx: %s, line %d, cont=%d\n", __func__, __LINE__, count);
 	return count;
 }
 

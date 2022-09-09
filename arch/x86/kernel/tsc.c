@@ -118,13 +118,16 @@ static __always_inline unsigned long long cycles_2_ns(unsigned long long cyc)
 	struct cyc2ns_data data;
 	unsigned long long ns;
 
+	printk("cdx: %s, line %d\n", __func__, __LINE__);
 	cyc2ns_read_begin(&data);
 
 	ns = data.cyc2ns_offset;
 	ns += mul_u64_u32_shr(cyc, data.cyc2ns_mul, data.cyc2ns_shift);
+	printk("cdx: %s, line %d\n", __func__, __LINE__);
 
 	cyc2ns_read_end();
 
+	printk("cdx: %s, line %d\n", __func__, __LINE__);
 	return ns;
 }
 
@@ -217,9 +220,11 @@ static void __init cyc2ns_init_secondary_cpus(void)
  */
 u64 native_sched_clock(void)
 {
+	//printk("cdx: %s, line %d\n", __func__, __LINE__);
 	if (static_branch_likely(&__use_tsc)) {
 		u64 tsc_now = rdtsc();
 
+		//printk("cdx: %s, line %d\n", __func__, __LINE__);
 		/* return the value in ns */
 		return cycles_2_ns(tsc_now);
 	}
@@ -233,6 +238,7 @@ u64 native_sched_clock(void)
 	 *   can achieve it. )
 	 */
 
+	//printk("cdx: %s, line %d\n", __func__, __LINE__);
 	/* No locking but a rare wrong value is not a big deal: */
 	return (jiffies_64 - INITIAL_JIFFIES) * (1000000000 / HZ);
 }
@@ -250,6 +256,7 @@ u64 native_sched_clock_from_tsc(u64 tsc)
 #ifdef CONFIG_PARAVIRT
 unsigned long long sched_clock(void)
 {
+	//printk("cdx: %s, line %d\n", __func__, __LINE__);
 	return paravirt_sched_clock();
 }
 
@@ -258,6 +265,7 @@ bool using_native_sched_clock(void)
 	return static_call_query(pv_sched_clock) == native_sched_clock;
 }
 #else
+#error jjjjjjjjjjjjjjj222
 unsigned long long
 sched_clock(void) __attribute__((alias("native_sched_clock")));
 

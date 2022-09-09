@@ -42,10 +42,12 @@ static inline u64 hv_do_hypercall(u64 control, void *input, void *output)
 	u64 output_address = output ? virt_to_phys(output) : 0;
 	u64 hv_status;
 
+	printk("cdx: %s, line %d\n", __func__, __LINE__);
 #ifdef CONFIG_X86_64
 	if (!hv_hypercall_pg)
 		return U64_MAX;
 
+	WARN_ONCE(1, "cdx: %s, line %d\n", __func__, __LINE__);
 	__asm__ __volatile__("mov %4, %%r8\n"
 			     CALL_NOSPEC
 			     : "=a" (hv_status), ASM_CALL_CONSTRAINT,
@@ -53,6 +55,7 @@ static inline u64 hv_do_hypercall(u64 control, void *input, void *output)
 			     :  "r" (output_address),
 				THUNK_TARGET(hv_hypercall_pg)
 			     : "cc", "memory", "r8", "r9", "r10", "r11");
+	printk("cdx: %s, line %d\n", __func__, __LINE__);
 #else
 	u32 input_address_hi = upper_32_bits(input_address);
 	u32 input_address_lo = lower_32_bits(input_address);
@@ -79,14 +82,17 @@ static inline u64 hv_do_fast_hypercall8(u16 code, u64 input1)
 {
 	u64 hv_status, control = (u64)code | HV_HYPERCALL_FAST_BIT;
 
+	printk("cdx: %s, line %d\n", __func__, __LINE__);
 #ifdef CONFIG_X86_64
 	{
+		WARN_ONCE(1, "cdx: %s, line %d\n", __func__, __LINE__);
 		__asm__ __volatile__(CALL_NOSPEC
 				     : "=a" (hv_status), ASM_CALL_CONSTRAINT,
 				       "+c" (control), "+d" (input1)
 				     : THUNK_TARGET(hv_hypercall_pg)
 				     : "cc", "r8", "r9", "r10", "r11");
 	}
+	printk("cdx: %s, line %d\n", __func__, __LINE__);
 #else
 	{
 		u32 input1_hi = upper_32_bits(input1);
@@ -110,8 +116,10 @@ static inline u64 hv_do_fast_hypercall16(u16 code, u64 input1, u64 input2)
 {
 	u64 hv_status, control = (u64)code | HV_HYPERCALL_FAST_BIT;
 
+	printk("cdx: %s, line %d\n", __func__, __LINE__);
 #ifdef CONFIG_X86_64
 	{
+		WARN_ONCE(1, "cdx: %s, line %d\n", __func__, __LINE__);
 		__asm__ __volatile__("mov %4, %%r8\n"
 				     CALL_NOSPEC
 				     : "=a" (hv_status), ASM_CALL_CONSTRAINT,
@@ -120,6 +128,7 @@ static inline u64 hv_do_fast_hypercall16(u16 code, u64 input1, u64 input2)
 				       THUNK_TARGET(hv_hypercall_pg)
 				     : "cc", "r8", "r9", "r10", "r11");
 	}
+	printk("cdx: %s, line %d\n", __func__, __LINE__);
 #else
 	{
 		u32 input1_hi = upper_32_bits(input1);

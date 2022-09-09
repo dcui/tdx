@@ -278,6 +278,8 @@ static void __init ms_hyperv_init_platform(void)
 	 */
 	//cdx: [    0.000000] Hyper-V: features 0x2e7f, partition flags: 0x388030, hints 0x20e24, misc 0xbed7b2
 	ms_hyperv.features = cpuid_eax(HYPERV_CPUID_FEATURES);
+	ms_hyperv.features &= ~HV_MSR_REFERENCE_TSC_AVAILABLE; //cdx: hide the TSC page
+
 	ms_hyperv.priv_high = cpuid_ebx(HYPERV_CPUID_FEATURES);
 	ms_hyperv.misc_features = cpuid_edx(HYPERV_CPUID_FEATURES);
 	ms_hyperv.hints    = cpuid_eax(HYPERV_CPUID_ENLIGHTMENT_INFO);

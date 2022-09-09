@@ -335,6 +335,7 @@ int hv_set_mem_host_visibility(unsigned long kbuffer, int pagecount, bool visibl
 	int ret = 0;
 	int i, pfn;
 
+	BUG_ON(1);
 	if (!hv_is_isolation_supported() || !hv_hypercall_pg)
 		return 0;
 

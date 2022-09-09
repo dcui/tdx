@@ -24,6 +24,7 @@ extern u64 sched_clock_cpu(int cpu);
 extern void sched_clock_init(void);
 
 #ifndef CONFIG_HAVE_UNSTABLE_SCHED_CLOCK
+#error lllllllllllllllllllllllllclock
 static inline void sched_clock_tick(void)
 {
 }
@@ -47,7 +48,11 @@ static inline u64 cpu_clock(int cpu)
 
 static inline u64 local_clock(void)
 {
-	return sched_clock();
+	u64 ret;
+	printk("cdx: %s, line %d\n", __func__, __LINE__);
+	ret = sched_clock();
+	printk("cdx: %s, line %d, ret=%lld\n", __func__, __LINE__, ret);
+	return ret;
 }
 #else
 extern int sched_clock_stable(void);

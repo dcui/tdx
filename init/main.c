@@ -949,16 +949,26 @@ asmlinkage __visible void __init __no_sanitize_address start_kernel(void)
 	page_address_init();
 	pr_notice("%s", linux_banner);
 	early_security_init();
+	printk("cdx: %s, line %d\n", __func__, __LINE__);
 	setup_arch(&command_line);
+	printk("cdx: %s, line %d\n", __func__, __LINE__);
 	setup_boot_config();
+	printk("cdx: %s, line %d\n", __func__, __LINE__);
 	setup_command_line(command_line);
+	printk("cdx: %s, line %d\n", __func__, __LINE__);
 	setup_nr_cpu_ids();
+	printk("cdx: %s, line %d\n", __func__, __LINE__);
 	setup_per_cpu_areas();
+	printk("cdx: %s, line %d\n", __func__, __LINE__);
 	smp_prepare_boot_cpu();	/* arch-specific boot-cpu hooks */
+	printk("cdx: %s, line %d\n", __func__, __LINE__);
 	boot_cpu_hotplug_init();
 
+	printk("cdx: %s, line %d\n", __func__, __LINE__);
 	build_all_zonelists(NULL);
+	printk("cdx: %s, line %d\n", __func__, __LINE__);
 	page_alloc_init();
+	printk("cdx: %s, line %d\n", __func__, __LINE__);
 
 	pr_notice("Kernel command line: %s\n", saved_command_line);
 	/* parameters may set static keys */
@@ -1031,12 +1041,19 @@ asmlinkage __visible void __init __no_sanitize_address start_kernel(void)
 	tick_init();
 	rcu_init_nohz();
 	init_timers();
+	printk("cdx: %s, line %d\n", __func__, __LINE__);
 	srcu_init();
+	printk("cdx: %s, line %d\n", __func__, __LINE__);
 	hrtimers_init();
+	printk("cdx: %s, line %d\n", __func__, __LINE__);
 	softirq_init();
-	timekeeping_init();
+	printk("cdx: %s, line %d\n", __func__, __LINE__);
+	timekeeping_init();// <-------------------------------------------------------------------
+	printk("cdx: %s, line %d\n", __func__, __LINE__);
 	kfence_init();
+	printk("cdx: %s, line %d\n", __func__, __LINE__);
 	time_init();
+	printk("cdx: %s, line %d\n", __func__, __LINE__);
 
 	/*
 	 * For best initial stack canary entropy, prepare it after:
@@ -1046,28 +1063,39 @@ asmlinkage __visible void __init __no_sanitize_address start_kernel(void)
 	 * - random_init() to initialize the RNG from from early entropy sources
 	 */
 	random_init(command_line);
+	printk("cdx: %s, line %d\n", __func__, __LINE__);
 	boot_init_stack_canary();
+	printk("cdx: %s, line %d\n", __func__, __LINE__);
 
 	perf_event_init();
+	printk("cdx: %s, line %d\n", __func__, __LINE__);
 	profile_init();
+	printk("cdx: %s, line %d\n", __func__, __LINE__);
 	call_function_init();
+	printk("cdx: %s, line %d\n", __func__, __LINE__);
 	WARN(!irqs_disabled(), "Interrupts were enabled early\n");
+	printk("cdx: %s, line %d\n", __func__, __LINE__);
 
 	early_boot_irqs_disabled = false;
+	printk("cdx: %s, line %d\n", __func__, __LINE__);
 	local_irq_enable();
+	printk("cdx: %s, line %d\n", __func__, __LINE__);
 
 	kmem_cache_init_late();
+	printk("cdx: %s, line %d\n", __func__, __LINE__);
 
 	/*
 	 * HACK ALERT! This is early. We're enabling the console before
 	 * we've done PCI setups etc, and console_init() must be aware of
 	 * this. But we do want output early, in case something goes wrong.
 	 */
+	printk("cdx: %s, line %d\n", __func__, __LINE__);
 	console_init();
 	if (panic_later)
 		panic("Too many boot %s vars at `%s'", panic_later,
 		      panic_param);
 
+	printk("cdx: %s, line %d\n", __func__, __LINE__);
 	lockdep_init();
 
 	/*
@@ -1075,6 +1103,7 @@ asmlinkage __visible void __init __no_sanitize_address start_kernel(void)
 	 * to self-test [hard/soft]-irqs on/off lock inversion bugs
 	 * too:
 	 */
+	printk("cdx: %s, line %d\n", __func__, __LINE__);
 	locking_selftest();
 
 	/*
@@ -1083,9 +1112,12 @@ asmlinkage __visible void __init __no_sanitize_address start_kernel(void)
 	 * mark the bounce buffers as decrypted so that their usage will
 	 * not cause "plain-text" data to be decrypted when accessed.
 	 */
+	printk("cdx: %s, line %d\n", __func__, __LINE__);
 	mem_encrypt_init();
+	printk("cdx: %s, line %d\n", __func__, __LINE__);
 
 #ifdef CONFIG_BLK_DEV_INITRD
+	printk("cdx: %s, line %d\n", __func__, __LINE__);
 	if (initrd_start && !initrd_below_start_ok &&
 	    page_to_pfn(virt_to_page((void *)initrd_start)) < min_low_pfn) {
 		pr_crit("initrd overwritten (0x%08lx < 0x%08lx) - disabling it.\n",
@@ -1094,54 +1126,73 @@ asmlinkage __visible void __init __no_sanitize_address start_kernel(void)
 		initrd_start = 0;
 	}
 #endif
+	printk("cdx: %s, line %d\n", __func__, __LINE__);
 	setup_per_cpu_pageset();
+	printk("cdx: %s, line %d\n", __func__, __LINE__);
 	numa_policy_init();
 	acpi_early_init();
 	printk("cdx: %s, line %d\n", __func__, __LINE__);
-	if (late_time_init) {
+	printk("cdx: %s, line %d\n", __func__, __LINE__);
+	if (late_time_init) { //<-----=============================================================================
 		printk("cdx: %s, line %d\n", __func__, __LINE__);
 		late_time_init();
 	}
 	printk("cdx: %s, line %d\n", __func__, __LINE__);
 	sched_clock_init();
 	calibrate_delay();
+	printk("cdx: %s, line %d\n", __func__, __LINE__);
 	pid_idr_init();
 	anon_vma_init();
+	printk("cdx: %s, line %d\n", __func__, __LINE__);
 #ifdef CONFIG_X86
 	if (efi_enabled(EFI_RUNTIME_SERVICES))
 		efi_enter_virtual_mode();
 #endif
 	thread_stack_cache_init();
+	printk("cdx: %s, line %d\n", __func__, __LINE__);
 	cred_init();
 	fork_init();
+	printk("cdx: %s, line %d\n", __func__, __LINE__);
 	proc_caches_init();
 	uts_ns_init();
+	printk("cdx: %s, line %d\n", __func__, __LINE__);
 	key_init();
 	security_init();
+	printk("cdx: %s, line %d\n", __func__, __LINE__);
 	dbg_late_init();
 	net_ns_init();
+	printk("cdx: %s, line %d\n", __func__, __LINE__);
 	vfs_caches_init();
 	pagecache_init();
 	signals_init();
 	seq_file_init();
+	printk("cdx: %s, line %d\n", __func__, __LINE__);
 	proc_root_init();
 	nsfs_init();
 	cpuset_init();
 	cgroup_init();
 	taskstats_init_early();
+	printk("cdx: %s, line %d\n", __func__, __LINE__);
 	delayacct_init();
 
 	poking_init();
+	printk("cdx: %s, line %d\n", __func__, __LINE__);
 	check_bugs();
+	printk("cdx: %s, line %d\n", __func__, __LINE__);
 
 	acpi_subsystem_init();
+	printk("cdx: %s, line %d\n", __func__, __LINE__);
 	arch_post_acpi_subsys_init();
+	printk("cdx: %s, line %d\n", __func__, __LINE__);
 	kcsan_init();
+	printk("cdx: %s, line %d\n", __func__, __LINE__);
 
 	/* Do the rest non-__init'ed, we're now alive */
 	arch_call_rest_init();
+	printk("cdx: %s, line %d\n", __func__, __LINE__);
 
 	prevent_tail_call_optimization();
+	printk("cdx: %s, line %d\n", __func__, __LINE__);
 }
 
 /* Call all constructor functions linked into the kernel. */

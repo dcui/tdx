@@ -2071,13 +2071,16 @@ static int __set_memory_enc_pgtable(unsigned long addr, int numpages, bool enc)
 
 static int __set_memory_enc_dec(unsigned long addr, int numpages, bool enc)
 {
+#if 0
 	if (hv_is_isolation_supported())
 		return hv_set_mem_host_visibility(addr, numpages, !enc);
+#endif
 
-	if (cc_platform_has(CC_ATTR_MEM_ENCRYPT))
+//cdx
+	//if (cc_platform_has(CC_ATTR_MEM_ENCRYPT))
 		return __set_memory_enc_pgtable(addr, numpages, enc);
 
-	return 0;
+	//return 0;
 }
 
 int set_memory_encrypted(unsigned long addr, int numpages)

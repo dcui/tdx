@@ -2694,8 +2694,11 @@ static int __init hv_acpi_init(void)
 {
 	int ret, t;
 
-	if (!hv_is_hyperv_initialized())
+	printk("cdx: %s, line %d\n", __func__, __LINE__);
+	if (!hv_is_hyperv_initialized()) {
+		printk("cdx: %s, line %d: returning -ENODEV\n", __func__, __LINE__);
 		return -ENODEV;
+	}
 
 	if (hv_root_partition)
 		return 0;

@@ -82,8 +82,11 @@ void mach_get_cmos_time(struct timespec64 *now)
 	 * is the reliable way to read RTC - registers. If UIP is set
 	 * then the register access might be invalid.
 	 */
+#if 0
+	//cdx...................
 	while ((CMOS_READ(RTC_FREQ_SELECT) & RTC_UIP))
 		cpu_relax();
+#endif
 
 	sec = CMOS_READ(RTC_SECONDS);
 	min = CMOS_READ(RTC_MINUTES);
@@ -153,7 +156,9 @@ int update_persistent_clock64(struct timespec64 now)
 /* not static: needed by APM */
 void read_persistent_clock64(struct timespec64 *ts)
 {
+	printk("cdx: %s, line %d\n", __func__, __LINE__);
 	x86_platform.get_wallclock(ts);
+	printk("cdx: %s, line %d\n", __func__, __LINE__);
 }
 
 

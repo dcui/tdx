@@ -1274,44 +1274,64 @@ void __init setup_arch(char **cmdline_p)
 	 * Read APIC and some other early information from ACPI tables.
 	 */
 	acpi_boot_init();
+	printk("cdx: %s, line %d\n", __func__, __LINE__);
 	x86_dtb_init();
+	printk("cdx: %s, line %d\n", __func__, __LINE__);
 
 	/*
 	 * get boot-time SMP configuration:
 	 */
 	get_smp_config();
+	printk("cdx: %s, line %d\n", __func__, __LINE__);
 
 	/*
 	 * Systems w/o ACPI and mptables might not have it mapped the local
 	 * APIC yet, but prefill_possible_map() might need to access it.
 	 */
 	init_apic_mappings();
+	printk("cdx: %s, line %d\n", __func__, __LINE__);
 
 	prefill_possible_map();
+	printk("cdx: %s, line %d\n", __func__, __LINE__);
 
 	init_cpu_to_node();
+	printk("cdx: %s, line %d\n", __func__, __LINE__);
 	init_gi_nodes();
+	printk("cdx: %s, line %d\n", __func__, __LINE__);
 
 	io_apic_init_mappings();
+	printk("cdx: %s, line %d\n", __func__, __LINE__);
 
 	x86_init.hyper.guest_late_init();
+	printk("cdx: %s, line %d\n", __func__, __LINE__);
 
 	e820__reserve_resources();
+	printk("cdx: %s, line %d\n", __func__, __LINE__);
 	e820__register_nosave_regions(max_pfn);
+	printk("cdx: %s, line %d\n", __func__, __LINE__);
 
 	x86_init.resources.reserve_resources();
+	printk("cdx: %s, line %d\n", __func__, __LINE__);
 
 	e820__setup_pci_gap();
+	printk("cdx: %s, line %d\n", __func__, __LINE__);
 
 #ifdef CONFIG_VT
+	printk("cdx: %s, line %d\n", __func__, __LINE__);
 #if defined(CONFIG_VGA_CONSOLE)
+	printk("cdx: %s, line %d\n", __func__, __LINE__);
 	if (!efi_enabled(EFI_BOOT) || (efi_mem_type(0xa0000) != EFI_CONVENTIONAL_MEMORY))
 		conswitchp = &vga_con;
+	printk("cdx: %s, line %d\n", __func__, __LINE__);
 #endif
+	printk("cdx: %s, line %d\n", __func__, __LINE__);
 #endif
+	printk("cdx: %s, line %d\n", __func__, __LINE__);
 	x86_init.oem.banner();
+	printk("cdx: %s, line %d\n", __func__, __LINE__);
 
 	x86_init.timers.wallclock_init();
+	printk("cdx: %s, line %d\n", __func__, __LINE__);
 
 	/*
 	 * This needs to run before setup_local_APIC() which soft-disables the
@@ -1320,17 +1340,25 @@ void __init setup_arch(char **cmdline_p)
 	 * interrupt delivery.
 	 */
 	therm_lvt_init();
+	printk("cdx: %s, line %d\n", __func__, __LINE__);
 
 	mcheck_init();
+	printk("cdx: %s, line %d\n", __func__, __LINE__);
 
 	register_refined_jiffies(CLOCK_TICK_RATE);
+	printk("cdx: %s, line %d\n", __func__, __LINE__);
 
 #ifdef CONFIG_EFI
-	if (efi_enabled(EFI_BOOT))
+	if (efi_enabled(EFI_BOOT)) {
+		printk("cdx: %s, line %d\n", __func__, __LINE__);
 		efi_apply_memmap_quirks();
+		printk("cdx: %s, line %d\n", __func__, __LINE__);
+	}
 #endif
+	printk("cdx: %s, line %d\n", __func__, __LINE__);
 
 	unwind_init();
+	printk("cdx: %s, line %d\n", __func__, __LINE__);
 }
 
 #ifdef CONFIG_X86_32

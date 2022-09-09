@@ -89,7 +89,7 @@ static void hv_apic_write(u32 reg, u32 val)
 
 static void hv_apic_eoi_write(u32 reg, u32 val)
 {
-	struct hv_vp_assist_page *hvp = hv_vp_assist_page[smp_processor_id()];
+	struct hv_vp_assist_page *hvp = hv_vp_assist_page[smp_processor_id()]; //cdx
 
 	if (hvp && (xchg(&hvp->apic_assist, 0) & 0x1))
 		return;
@@ -280,7 +280,6 @@ void __init hv_apic_init(void)
 {
 	printk("cdx: %s, line %d\n", __func__, __LINE__);
 	if (ms_hyperv.hints & HV_X64_CLUSTER_IPI_RECOMMENDED) {
-	//if (1) {
 		printk("cdx: %s, line %d\n", __func__, __LINE__);
 		pr_info("Hyper-V: Using IPI hypercalls\n");
 		/*
@@ -294,11 +293,11 @@ void __init hv_apic_init(void)
 		apic->send_IPI_allbutself = hv_send_ipi_allbutself;
 		apic->send_IPI_all = hv_send_ipi_all;
 		apic->send_IPI_self = hv_send_ipi_self;
-	}
+	} else { BUG_ON(1); }
 
-	if (ms_hyperv.hints & HV_X64_APIC_ACCESS_RECOMMENDED) {
-	//if (1) {
+	if (ms_hyperv.hints & HV_X64_APIC_ACCESS_RECOMMENDED) { // tdx: hyper-v returns 0
 		printk("cdx: %s, line %d\n", __func__, __LINE__);
+		BUG_ON(1);
 		pr_info("Hyper-V: Using enlightened APIC (%s mode)",
 			x2apic_enabled() ? "x2apic" : "xapic");
 		/*
@@ -312,7 +311,7 @@ void __init hv_apic_init(void)
 		 * lazy EOI when available, but the same accessor works for
 		 * both xapic and x2apic because the field layout is the same.
 		 */
-		apic_set_eoi_write(hv_apic_eoi_write);
+		apic_set_eoi_write(hv_apic_eoi_write); //not tdx
 		if (!x2apic_enabled()) {
 			printk("cdx: %s, line %d\n", __func__, __LINE__);
 			apic->read      = hv_apic_read;

@@ -278,6 +278,7 @@ static int handle_cpuid(struct pt_regs *regs, struct ve_info *ve)
 
 	bool print = regs->ax == 0x40000000 || regs->ax == 0x1 ||
 		!(regs->ax >= 0x40000100 && regs->ax <= 0x4000ff00);
+	print = 0; //cdx
 	/*
 	 * Only allow VMM to control range reserved for hypervisor
 	 * communication.
@@ -533,7 +534,7 @@ __init bool tdx_early_handle_ve(struct pt_regs *regs)
 	struct ve_info ve;
 	int insn_len;
 
-	while (1) { mdelay(1); } //cdx
+	//while (1) { mdelay(1); } //cdx
 
 	WARN_ONCE(1, "cdx: tdx_early_handle_ve: exit_reason=%lld\n", ve.exit_reason);
 	tdx_get_ve_info(&ve);
@@ -627,14 +628,22 @@ static int virt_exception_kernel(struct pt_regs *regs, struct ve_info *ve)
 	}
 }
 
+extern volatile int ve_print;
 bool tdx_handle_virt_exception(struct pt_regs *regs, struct ve_info *ve)
 {
 	int insn_len;
 
-	if (user_mode(regs))
+	if (ve_print) { printk("cdx: %s, line %d\n", __func__, __LINE__); mdelay(3000); }
+	if (user_mode(regs)) {
+		if (ve_print) { printk("cdx: %s, line %d\n", __func__, __LINE__); mdelay(3000); }
 		insn_len = virt_exception_user(regs, ve);
-	else
+		if (ve_print) { printk("cdx: %s, line %d\n", __func__, __LINE__); mdelay(3000); }
+	} else {
+		if (ve_print) { printk("cdx: %s, line %d\n", __func__, __LINE__); mdelay(3000); }
 		insn_len = virt_exception_kernel(regs, ve);
+		if (ve_print) { printk("cdx: %s, line %d\n", __func__, __LINE__); mdelay(3000); }
+	}
+	if (ve_print) { printk("cdx: %s, line %d, inst_len=%d\n", __func__, __LINE__, insn_len); mdelay(3000); }
 	if (insn_len < 0)
 		return false;
 

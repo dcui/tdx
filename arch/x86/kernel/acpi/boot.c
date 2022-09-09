@@ -1717,7 +1717,9 @@ int __init acpi_boot_init(void)
 	/*
 	 * Process the Multiple APIC Description Table (MADT), if present
 	 */
+	printk("cdx: %s, line %d\n", __func__, __LINE__);
 	acpi_process_madt();
+	printk("cdx: %s, line %d\n", __func__, __LINE__);
 
 	acpi_table_parse(ACPI_SIG_HPET, acpi_parse_hpet);
 	if (IS_ENABLED(CONFIG_ACPI_BGRT) && !acpi_nobgrt)
@@ -1726,8 +1728,10 @@ int __init acpi_boot_init(void)
 	if (!acpi_noirq)
 		x86_init.pci.init = pci_acpi_init;
 
+	printk("cdx: %s, line %d\n", __func__, __LINE__);
 	/* Do not enable ACPI SPCR console by default */
 	acpi_parse_spcr(earlycon_acpi_spcr_enable, false);
+	printk("cdx: %s, line %d\n", __func__, __LINE__);
 	return 0;
 }
 

@@ -49,6 +49,7 @@
 #include <linux/slab.h>
 #include <linux/memblock.h>
 #include <linux/msi.h>
+#include <linux/delay.h>
 
 #include <asm/irqdomain.h>
 #include <asm/io.h>
@@ -274,7 +275,9 @@ static inline void io_apic_eoi(unsigned int apic, unsigned int vector)
 unsigned int native_io_apic_read(unsigned int apic, unsigned int reg)
 {
 	struct io_apic __iomem *io_apic = io_apic_base(apic);
+
 	writel(reg, &io_apic->index);
+
 	return readl(&io_apic->data);
 }
 

@@ -1583,8 +1583,10 @@ u64 timekeeping_max_deferment(void)
  */
 void __weak read_persistent_clock64(struct timespec64 *ts)
 {
+	printk("cdx: %s, line %d\n", __func__, __LINE__);
 	ts->tv_sec = 0;
 	ts->tv_nsec = 0;
+	printk("cdx: %s, line %d\n", __func__, __LINE__);
 }
 
 /**
@@ -1604,8 +1606,11 @@ void __weak __init
 read_persistent_wall_and_boot_offset(struct timespec64 *wall_time,
 				     struct timespec64 *boot_offset)
 {
+	printk("cdx: %s, line %d\n", __func__, __LINE__);
 	read_persistent_clock64(wall_time);
+	printk("cdx: %s, line %d\n", __func__, __LINE__);
 	*boot_offset = ns_to_timespec64(local_clock());
+	printk("cdx: %s, line %d\n", __func__, __LINE__);
 }
 
 /*
@@ -1636,7 +1641,9 @@ void __init timekeeping_init(void)
 	struct clocksource *clock;
 	unsigned long flags;
 
+	printk("cdx: %s, line %d\n", __func__, __LINE__);
 	read_persistent_wall_and_boot_offset(&wall_time, &boot_offset);
+	printk("cdx: %s, line %d\n", __func__, __LINE__);
 	if (timespec64_valid_settod(&wall_time) &&
 	    timespec64_to_ns(&wall_time) > 0) {
 		persistent_clock_exists = true;
@@ -1645,33 +1652,47 @@ void __init timekeeping_init(void)
 		wall_time = (struct timespec64){0};
 	}
 
+	printk("cdx: %s, line %d\n", __func__, __LINE__);
 	if (timespec64_compare(&wall_time, &boot_offset) < 0)
 		boot_offset = (struct timespec64){0};
 
+	printk("cdx: %s, line %d\n", __func__, __LINE__);
 	/*
 	 * We want set wall_to_mono, so the following is true:
 	 * wall time + wall_to_mono = boot time
 	 */
 	wall_to_mono = timespec64_sub(boot_offset, wall_time);
 
+	printk("cdx: %s, line %d\n", __func__, __LINE__);
 	raw_spin_lock_irqsave(&timekeeper_lock, flags);
+	printk("cdx: %s, line %d\n", __func__, __LINE__);
 	write_seqcount_begin(&tk_core.seq);
+	printk("cdx: %s, line %d\n", __func__, __LINE__);
 	ntp_init();
+	printk("cdx: %s, line %d\n", __func__, __LINE__);
 
 	clock = clocksource_default_clock();
+	printk("cdx: %s, line %d\n", __func__, __LINE__);
 	if (clock->enable)
 		clock->enable(clock);
+	printk("cdx: %s, line %d\n", __func__, __LINE__);
 	tk_setup_internals(tk, clock);
+	printk("cdx: %s, line %d\n", __func__, __LINE__);
 
 	tk_set_xtime(tk, &wall_time);
+	printk("cdx: %s, line %d\n", __func__, __LINE__);
 	tk->raw_sec = 0;
 
 	tk_set_wall_to_mono(tk, wall_to_mono);
 
+	printk("cdx: %s, line %d\n", __func__, __LINE__);
 	timekeeping_update(tk, TK_MIRROR | TK_CLOCK_WAS_SET);
+	printk("cdx: %s, line %d\n", __func__, __LINE__);
 
 	write_seqcount_end(&tk_core.seq);
+	printk("cdx: %s, line %d\n", __func__, __LINE__);
 	raw_spin_unlock_irqrestore(&timekeeper_lock, flags);
+	printk("cdx: %s, line %d\n", __func__, __LINE__);
 }
 
 /* time in seconds when suspend began for persistent clock */

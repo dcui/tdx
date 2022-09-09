@@ -69,6 +69,7 @@ EXPORT_SYMBOL_GPL(hv_stimer0_isr);
  */
 static irqreturn_t hv_stimer0_percpu_isr(int irq, void *dev_id)
 {
+//	printk("cdx: %s, line %d\n", __func__, __LINE__);
 	hv_stimer0_isr();
 	return IRQ_HANDLED;
 }
@@ -79,6 +80,7 @@ static int hv_ce_set_next_event(unsigned long delta,
 	u64 current_tick;
 
 	current_tick = hv_read_reference_counter();
+//	printk("cdx: %s, line %d: curr=%lld, delta=%ld\n", __func__, __LINE__, current_tick, delta);
 	current_tick += delta;
 	hv_set_register(HV_REGISTER_STIMER0_COUNT, current_tick);
 	return 0;
@@ -86,6 +88,7 @@ static int hv_ce_set_next_event(unsigned long delta,
 
 static int hv_ce_shutdown(struct clock_event_device *evt)
 {
+//	printk("cdx: %s, line %d\n", __func__, __LINE__);
 	hv_set_register(HV_REGISTER_STIMER0_COUNT, 0);
 	hv_set_register(HV_REGISTER_STIMER0_CONFIG, 0);
 	if (direct_mode_enabled && stimer0_irq >= 0)
@@ -98,6 +101,7 @@ static int hv_ce_set_oneshot(struct clock_event_device *evt)
 {
 	union hv_stimer_config timer_cfg;
 
+//	printk("cdx: %s, line %d\n", __func__, __LINE__);
 	timer_cfg.as_uint64 = 0;
 	timer_cfg.enable = 1;
 	timer_cfg.auto_enable = 1;
@@ -129,9 +133,11 @@ static int hv_stimer_init(unsigned int cpu)
 {
 	struct clock_event_device *ce;
 
+//	printk("cdx: %s, line %d\n", __func__, __LINE__);
 	if (!hv_clock_event)
 		return 0;
 
+//	printk("cdx: %s, line %d\n", __func__, __LINE__);
 	ce = per_cpu_ptr(hv_clock_event, cpu);
 	ce->name = "Hyper-V clockevent";
 	ce->features = CLOCK_EVT_FEAT_ONESHOT;
@@ -145,6 +151,7 @@ static int hv_stimer_init(unsigned int cpu)
 					HV_CLOCK_HZ,
 					HV_MIN_DELTA_TICKS,
 					HV_MAX_MAX_DELTA_TICKS);
+//	printk("cdx: %s, line %d\n", __func__, __LINE__);
 	return 0;
 }
 
@@ -155,9 +162,11 @@ int hv_stimer_cleanup(unsigned int cpu)
 {
 	struct clock_event_device *ce;
 
+//	printk("cdx: %s, line %d\n", __func__, __LINE__);
 	if (!hv_clock_event)
 		return 0;
 
+//	printk("cdx: %s, line %d\n", __func__, __LINE__);
 	/*
 	 * In the legacy case where Direct Mode is not enabled
 	 * (which can only be on x86/64), stimer cleanup happens
@@ -250,6 +259,7 @@ int hv_stimer_alloc(bool have_percpu_irqs)
 	direct_mode_enabled = ms_hyperv.misc_features &
 			HV_STIMER_DIRECT_MODE_AVAILABLE;
 
+//	printk("cdx: %s, line %dk direct_mode_enabled=%d\n", __func__, __LINE__, direct_mode_enabled);
 	/*
 	 * If Direct Mode isn't enabled, the remainder of the initialization
 	 * is done later by hv_stimer_legacy_init()
@@ -294,9 +304,11 @@ EXPORT_SYMBOL_GPL(hv_stimer_alloc);
  */
 void hv_stimer_legacy_init(unsigned int cpu, int sint)
 {
+//	printk("cdx: %s, line %d\n", __func__, __LINE__);
 	if (direct_mode_enabled)
 		return;
 
+//	printk("cdx: %s, line %d\n", __func__, __LINE__);
 	/*
 	 * This function gets called by each vCPU, so setting the
 	 * global stimer_message_sint value each time is conceptually
@@ -442,12 +454,15 @@ static struct clocksource hyperv_cs_tsc = {
 
 static u64 notrace read_hv_clock_msr(void)
 {
+	u64 ret;
 	/*
 	 * Read the partition counter to get the current tick count. This count
 	 * is set to 0 when the partition is created and is incremented in
 	 * 100 nanosecond units.
 	 */
-	return hv_get_register(HV_REGISTER_TIME_REF_COUNT);
+	ret = hv_get_register(HV_REGISTER_TIME_REF_COUNT);
+	//printk("cdx: read_hv_clock_msr: ret=%lld\n", ret);
+	return ret;
 }
 
 static u64 notrace read_hv_clock_msr_cs(struct clocksource *arg)
@@ -501,6 +516,7 @@ static bool __init hv_init_tsc_clocksource(void)
 	if (!(ms_hyperv.features & HV_MSR_REFERENCE_TSC_AVAILABLE))
 		return false;
 
+	BUG_ON(1);
 	if (hv_root_partition)
 		return false;
 
