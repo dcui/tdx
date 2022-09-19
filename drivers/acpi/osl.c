@@ -583,7 +583,7 @@ acpi_os_install_interrupt_handler(u32 gsi, acpi_osd_handler handler,
 	acpi_irq_handler = handler;
 	acpi_irq_context = context;
 	if (request_irq(irq, acpi_irq, IRQF_SHARED, "acpi", acpi_irq)) {
-		pr_err("SCI (IRQ%d) allocation failed\n", irq);
+		pr_err("cdx: SCI (IRQ%d) allocation failed!!!!!!!!!!!!!!!!!!!!!!!!!\n", irq);
 		acpi_irq_handler = NULL;
 		return AE_NOT_ACQUIRED;
 	}

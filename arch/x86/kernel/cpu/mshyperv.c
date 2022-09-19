@@ -338,22 +338,30 @@ static void __init ms_hyperv_init_platform(void)
 		ms_hyperv.isolation_config_b = cpuid_ebx(HYPERV_CPUID_ISOLATION_CONFIG);
 		ms_hyperv.shared_gpa_boundary =
 			BIT_ULL(ms_hyperv.shared_gpa_boundary_bits);
+		ms_hyperv.shared_gpa_boundary = BIT_ULL(47); //cdx
 
 		pr_info("Hyper-V: Isolation Config: Group A 0x%x, Group B 0x%x\n",
 			ms_hyperv.isolation_config_a, ms_hyperv.isolation_config_b);
 
 		if (hv_get_isolation_type() == HV_ISOLATION_TYPE_SNP) {
+			WARN_ON(1);
 			static_branch_enable(&isolation_type_snp);
 #ifdef CONFIG_SWIOTLB
+			WARN_ON(1);
 			swiotlb_unencrypted_base = ms_hyperv.shared_gpa_boundary;
 #endif
+		} else {
+			swiotlb_unencrypted_base = ms_hyperv.shared_gpa_boundary;
+			printk("cdx: ms_hyperv_init_platform: setting swiotlb_unencrypted_base=0x%llx\n", swiotlb_unencrypted_base);
 		}
 		/* Isolation VMs are unenlightened SEV-based VMs, thus this check: */
 		if (IS_ENABLED(CONFIG_AMD_MEM_ENCRYPT)) {
 			if (hv_get_isolation_type() != HV_ISOLATION_TYPE_NONE)
 				cc_set_vendor(CC_VENDOR_HYPERV);
-		}
-	}
+			else
+				WARN_ON(1);
+		} else { WARN_ON(1); }
+	} else WARN_ON(1);
 
 	if (hv_max_functions_eax >= HYPERV_CPUID_NESTED_FEATURES) {
 		ms_hyperv.nested_features =
@@ -497,7 +505,7 @@ static bool __init ms_hyperv_msi_ext_dest_id(void)
 	u32 eax;
 
 	eax = cpuid_eax(HYPERV_CPUID_VIRT_STACK_INTERFACE);
-	WARN(eax != HYPERV_VS_INTERFACE_EAX_SIGNATURE, "cdx: ms_hyperv_msi_ext_dest_id:1: eax=0x%x\n", eax);
+	//WARN(eax != HYPERV_VS_INTERFACE_EAX_SIGNATURE, "cdx: ms_hyperv_msi_ext_dest_id:1: eax=0x%x\n", eax);
 	if (eax != HYPERV_VS_INTERFACE_EAX_SIGNATURE)
 		return false;
 

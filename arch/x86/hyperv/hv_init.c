@@ -553,6 +553,20 @@ void __init hyperv_init(void)
 	 * space. Map function doesn't work in the early place and so
 	 * call swiotlb_update_mem_attributes() here.
 	 */
+#if 0
+	{
+		unsigned long r;
+		int g;
+
+		for (g = 0; g < 100; g++) {
+			r = __get_free_pages(GFP_ATOMIC, 0);
+			printk("cdx: g=%d, r=%lx\n", g, r);
+		}
+
+	}
+#endif
+
+
 	if (hv_is_isolation_supported())
 		swiotlb_update_mem_attributes();
 #endif

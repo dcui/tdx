@@ -4,6 +4,7 @@
 #undef pr_fmt
 #define pr_fmt(fmt)     "tdx: " fmt
 
+extern volatile int ve_print;
 #include <linux/cpufeature.h>
 #include <linux/delay.h>
 #include <asm/coco.h>
@@ -286,7 +287,7 @@ static int handle_cpuid(struct pt_regs *regs, struct ve_info *ve)
 	 * Return all-zeros for any CPUID outside the range. It matches CPU
 	 * behaviour for non-supported leaf.
 	 */
-	if (print) printk("cdx: handle_cpuid: 0: ax=%lx\n", regs->ax);
+	if (print) { ve_print=0; printk("cdx: handle_cpuid: 0: ax=%lx\n", regs->ax); ve_print=1; }
 	if (regs->ax < 0x40000000 || regs->ax > 0x4FFFFFFF) {
 		regs->ax = regs->bx = regs->cx = regs->dx = 0;
 		return ve_instr_len(ve);
@@ -297,11 +298,11 @@ static int handle_cpuid(struct pt_regs *regs, struct ve_info *ve)
 	 * ABI can be found in TDX Guest-Host-Communication Interface
 	 * (GHCI), section titled "VP.VMCALL<Instruction.CPUID>".
 	 */
-	if (print)  printk("cdx: handle_cpuid: 1: ax=%lx\n", regs->ax);
+	if (print)  { ve_print=0; printk("cdx: handle_cpuid: 1: ax=%lx\n", regs->ax); ve_print=1; }
 	if (__tdx_hypercall(&args, TDX_HCALL_HAS_OUTPUT))
 		return -EIO;
 
-	if (print) printk("cdx: handle_cpuid: 2: ax=%lx\n", regs->ax);
+	if (print) { ve_print=0; printk("cdx: handle_cpuid: 2: ax=%lx\n", regs->ax); ve_print=1; }
 	/*
 	 * As per TDX GHCI CPUID ABI, r12-r15 registers contain contents of
 	 * EAX, EBX, ECX, EDX registers after the CPUID instruction execution.
@@ -316,7 +317,7 @@ static int handle_cpuid(struct pt_regs *regs, struct ve_info *ve)
 	}
 #endif
 
-	if (print)  printk("cdx: handle_cpuid: 3: ax=%llx, bx=%llx, cx=%llx, dx=%llx\n", args.r12, args.r13, args.r14, args.r15);
+	if (print)  { ve_print=0; printk("cdx: handle_cpuid: 3: ax=%llx, bx=%llx, cx=%llx, dx=%llx\n", args.r12, args.r13, args.r14, args.r15); ve_print=1; }
 	regs->ax = args.r12;
 	regs->bx = args.r13;
 	regs->cx = args.r14;
@@ -357,24 +358,33 @@ static int handle_mmio(struct pt_regs *regs, struct ve_info *ve)
 	int size, extend_size;
 	u8 extend_val = 0;
 
+	if (ve_print) { ve_print=0; printk("cdx: %s, line %d, reason=%lld\n", __func__, __LINE__, ve->exit_reason); mdelay(1000); ve_print=1;}
 	/* Only in-kernel MMIO is supported */
 	if (WARN_ON_ONCE(user_mode(regs)))
 		return -EFAULT;
 
+	if (ve_print) { ve_print=0; printk("cdx: %s, line %d, reason=%lld\n", __func__, __LINE__, ve->exit_reason); mdelay(1000); ve_print=1;}
 	if (copy_from_kernel_nofault(buffer, (void *)regs->ip, MAX_INSN_SIZE))
 		return -EFAULT;
 
+	if (ve_print) { ve_print=0; printk("cdx: %s, line %d, reason=%lld\n", __func__, __LINE__, ve->exit_reason); mdelay(1000); ve_print=1;}
 	if (insn_decode(&insn, buffer, MAX_INSN_SIZE, INSN_MODE_64))
 		return -EINVAL;
 
+	if (ve_print) { ve_print=0; printk("cdx: %s, line %d, reason=%lld\n", __func__, __LINE__, ve->exit_reason); mdelay(1000); ve_print=1;}
 	mmio = insn_decode_mmio(&insn, &size);
+	if (ve_print) { ve_print=0; printk("cdx: %s, line %d, reason=%lld\n", __func__, __LINE__, ve->exit_reason); mdelay(1000); ve_print=1;}
 	if (WARN_ON_ONCE(mmio == MMIO_DECODE_FAILED))
 		return -EINVAL;
 
+	if (ve_print) { ve_print=0; printk("cdx: %s, line %d, reason=%lld\n", __func__, __LINE__, ve->exit_reason); mdelay(1000); ve_print=1;}
 	if (mmio != MMIO_WRITE_IMM && mmio != MMIO_MOVS) {
+		if (ve_print) { ve_print=0; printk("cdx: %s, line %d, reason=%lld\n", __func__, __LINE__, ve->exit_reason); mdelay(1000); ve_print=1;}
 		reg = insn_get_modrm_reg_ptr(&insn, regs);
+		if (ve_print) { ve_print=0; printk("cdx: %s, line %d, reason=%lld\n", __func__, __LINE__, ve->exit_reason); mdelay(1000); ve_print=1;}
 		if (!reg)
 			return -EINVAL;
+		if (ve_print) { ve_print=0; printk("cdx: %s, line %d, reason=%lld\n", __func__, __LINE__, ve->exit_reason); mdelay(1000); ve_print=1;}
 	}
 
 	/*
@@ -386,21 +396,28 @@ static int handle_mmio(struct pt_regs *regs, struct ve_info *ve)
 	 *
 	 * load_unaligned_zeropad() will recover using exception fixups.
 	 */
+	if (ve_print) { ve_print=0; printk("cdx: %s, line %d, reason=%lld\n", __func__, __LINE__, ve->exit_reason); mdelay(1000); ve_print=1;}
 	vaddr = (unsigned long)insn_get_addr_ref(&insn, regs);
+	if (ve_print) { ve_print=0; printk("cdx: %s, line %d, reason=%lld, va=%lx\n", __func__, __LINE__, ve->exit_reason, vaddr); mdelay(1000); ve_print=1;}
 	if (vaddr / PAGE_SIZE != (vaddr + size - 1) / PAGE_SIZE)
 		return -EFAULT;
 
+	if (ve_print) { ve_print=0; printk("cdx: %s, line %d, reason=%lld\n", __func__, __LINE__, ve->exit_reason); mdelay(1000); ve_print=1;}
 	/* Handle writes first */
 	switch (mmio) {
 	case MMIO_WRITE:
 		memcpy(&val, reg, size);
+		if (ve_print) { ve_print=0; printk("cdx: %s, line %d, reason=%lld\n", __func__, __LINE__, ve->exit_reason); mdelay(1000); ve_print=1;}
 		if (!mmio_write(size, ve->gpa, val))
 			return -EIO;
+		if (ve_print) { ve_print=0; printk("cdx: %s, line %d, reason=%lld\n", __func__, __LINE__, ve->exit_reason); mdelay(1000); ve_print=1;}
 		return insn.length;
 	case MMIO_WRITE_IMM:
 		val = insn.immediate.value;
+	if (ve_print) { ve_print=0; printk("cdx: %s, line %d, reason=%lld\n", __func__, __LINE__, ve->exit_reason); mdelay(1000); ve_print=1;}
 		if (!mmio_write(size, ve->gpa, val))
 			return -EIO;
+	if (ve_print) { ve_print=0; printk("cdx: %s, line %d, reason=%lld\n", __func__, __LINE__, ve->exit_reason); mdelay(1000); ve_print=1;}
 		return insn.length;
 	case MMIO_READ:
 	case MMIO_READ_ZERO_EXTEND:
@@ -414,6 +431,7 @@ static int handle_mmio(struct pt_regs *regs, struct ve_info *ve)
 		 * decoded or handled properly. It was likely not using io.h
 		 * helpers or accessed MMIO accidentally.
 		 */
+		if (ve_print) { ve_print=0; printk("cdx: %s, line %d, reason=%lld\n", __func__, __LINE__, ve->exit_reason); mdelay(1000); ve_print=1;}
 		return -EINVAL;
 	default:
 		WARN_ONCE(1, "Unknown insn_decode_mmio() decode value?");
@@ -447,9 +465,12 @@ static int handle_mmio(struct pt_regs *regs, struct ve_info *ve)
 		return -EINVAL;
 	}
 
+	if (ve_print) { ve_print=0; printk("cdx: %s, line %d, reason=%lld\n", __func__, __LINE__, ve->exit_reason); mdelay(1000); ve_print=1;}
 	if (extend_size)
 		memset(reg, extend_val, extend_size);
+	if (ve_print) { ve_print=0; printk("cdx: %s, line %d, reason=%lld\n", __func__, __LINE__, ve->exit_reason); mdelay(1000); ve_print=1;}
 	memcpy(reg, &val, size);
+	if (ve_print) { ve_print=0; printk("cdx: %s, line %d, reason=%lld\n", __func__, __LINE__, ve->exit_reason); mdelay(1000); ve_print=1;}
 	return insn.length;
 }
 
@@ -628,22 +649,17 @@ static int virt_exception_kernel(struct pt_regs *regs, struct ve_info *ve)
 	}
 }
 
-extern volatile int ve_print;
 bool tdx_handle_virt_exception(struct pt_regs *regs, struct ve_info *ve)
 {
 	int insn_len;
 
-	if (ve_print) { printk("cdx: %s, line %d\n", __func__, __LINE__); mdelay(3000); }
 	if (user_mode(regs)) {
-		if (ve_print) { printk("cdx: %s, line %d\n", __func__, __LINE__); mdelay(3000); }
 		insn_len = virt_exception_user(regs, ve);
-		if (ve_print) { printk("cdx: %s, line %d\n", __func__, __LINE__); mdelay(3000); }
+		ve->cdx_ret = insn_len;
 	} else {
-		if (ve_print) { printk("cdx: %s, line %d\n", __func__, __LINE__); mdelay(3000); }
 		insn_len = virt_exception_kernel(regs, ve);
-		if (ve_print) { printk("cdx: %s, line %d\n", __func__, __LINE__); mdelay(3000); }
+		ve->cdx_ret = insn_len;
 	}
-	if (ve_print) { printk("cdx: %s, line %d, inst_len=%d\n", __func__, __LINE__, insn_len); mdelay(3000); }
 	if (insn_len < 0)
 		return false;
 
@@ -799,11 +815,14 @@ void __init tdx_early_init(void)
 	 *
 	 * Adjust physical mask to only cover valid GPA bits.
 	 */
+	pr_info("Guest detected: 1: physical_mask=%llx, cc_mask=%llx\n", physical_mask, cc_mask);
 	physical_mask &= cc_mask - 1;
 
 	x86_platform.guest.enc_cache_flush_required = tdx_cache_flush_required;
 	x86_platform.guest.enc_tlb_flush_required   = tdx_tlb_flush_required;
 	x86_platform.guest.enc_status_change_finish = tdx_enc_status_changed;
 
-	pr_info("Guest detected\n");
+	pr_info("Guest detected: 2: physical_mask=%llx, %d\n", physical_mask, __PHYSICAL_MASK_SHIFT);
+	physical_mask = (1ULL << __PHYSICAL_MASK_SHIFT) - 1;
+	pr_info("cdx: Guest detected: 3: physical_mask=%llx, %d\n", physical_mask, __PHYSICAL_MASK_SHIFT);
 }

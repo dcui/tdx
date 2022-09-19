@@ -111,6 +111,7 @@ acpi_status ACPI_INIT_FUNCTION acpi_enable_subsystem(u32 flags)
 {
 	acpi_status status = AE_OK;
 
+	printk("cdx: %s, line %d, status=%d\n", __func__, __LINE__, status);
 	ACPI_FUNCTION_TRACE(acpi_enable_subsystem);
 
 	/*
@@ -124,14 +125,18 @@ acpi_status ACPI_INIT_FUNCTION acpi_enable_subsystem(u32 flags)
 
 	/* Enable ACPI mode */
 
+	printk("cdx: %s, line %d, status=%d\n", __func__, __LINE__, status);
 	if (!(flags & ACPI_NO_ACPI_ENABLE)) {
+		printk("cdx: %s, line %d, status=%d\n", __func__, __LINE__, status);
 		ACPI_DEBUG_PRINT((ACPI_DB_EXEC,
 				  "[Init] Going into ACPI mode\n"));
 
 		acpi_gbl_original_mode = acpi_hw_get_mode();
 
 		status = acpi_enable();
+		printk("cdx: %s, line %d, status=%d\n", __func__, __LINE__, status);
 		if (ACPI_FAILURE(status)) {
+			printk("cdx: %s, line %d, status=%d\n", __func__, __LINE__, status);
 			ACPI_WARNING((AE_INFO, "AcpiEnable failed"));
 			return_ACPI_STATUS(status);
 		}
@@ -143,7 +148,9 @@ acpi_status ACPI_INIT_FUNCTION acpi_enable_subsystem(u32 flags)
 	 */
 	if (!(flags & ACPI_NO_FACS_INIT)) {
 		status = acpi_tb_initialize_facs();
+		printk("cdx: %s, line %d, status=%d\n", __func__, __LINE__, status);
 		if (ACPI_FAILURE(status)) {
+			printk("cdx: %s, line %d, status=%d\n", __func__, __LINE__, status);
 			ACPI_WARNING((AE_INFO, "Could not map the FACS table"));
 			return_ACPI_STATUS(status);
 		}
@@ -164,11 +171,14 @@ acpi_status ACPI_INIT_FUNCTION acpi_enable_subsystem(u32 flags)
 	 * entire namespace.
 	 */
 	if (!(flags & ACPI_NO_EVENT_INIT)) {
+		printk("cdx: %s, line %d, status=%d\n", __func__, __LINE__, status);
 		ACPI_DEBUG_PRINT((ACPI_DB_EXEC,
 				  "[Init] Initializing ACPI events\n"));
 
 		status = acpi_ev_initialize_events();
+		printk("cdx: %s, line %d, status=%d\n", __func__, __LINE__, status);
 		if (ACPI_FAILURE(status)) {
+			printk("cdx: %s, line %d, status=%d\n", __func__, __LINE__, status);
 			return_ACPI_STATUS(status);
 		}
 	}
@@ -181,8 +191,11 @@ acpi_status ACPI_INIT_FUNCTION acpi_enable_subsystem(u32 flags)
 		ACPI_DEBUG_PRINT((ACPI_DB_EXEC,
 				  "[Init] Installing SCI/GL handlers\n"));
 
+		printk("cdx: %s, line %d, status=%d\n", __func__, __LINE__, status);
 		status = acpi_ev_install_xrupt_handlers();
+		printk("cdx: %s, line %d, status=%d\n", __func__, __LINE__, status);
 		if (ACPI_FAILURE(status)) {
+			printk("cdx: %s, line %d, status=%d\n", __func__, __LINE__, status);
 			return_ACPI_STATUS(status);
 		}
 	}

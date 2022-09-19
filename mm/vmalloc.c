@@ -160,10 +160,13 @@ static int vmap_pmd_range(pud_t *pud, unsigned long addr, unsigned long end,
 			phys_addr_t phys_addr, pgprot_t prot,
 			unsigned int max_page_shift, pgtbl_mod_mask *mask)
 {
+	bool cdx = (phys_addr > BIT_ULL(40));
 	pmd_t *pmd;
 	unsigned long next;
 
+	if (cdx) printk("cdx: vmap_pmd_range: 0: phys=%llx, addr=%lx\n", phys_addr, addr);
 	pmd = pmd_alloc_track(&init_mm, pud, addr, mask);
+	if (cdx) printk("cdx: vmap_pmd_range: 0: phys=%llx, addr=%lx, pmd=%px\n", phys_addr, addr, pmd);
 	if (!pmd)
 		return -ENOMEM;
 	do {
@@ -177,6 +180,7 @@ static int vmap_pmd_range(pud_t *pud, unsigned long addr, unsigned long end,
 
 		if (vmap_pte_range(pmd, addr, next, phys_addr, prot, max_page_shift, mask))
 			return -ENOMEM;
+		if (cdx) printk("cdx: vmap_pmd_range: 2: phys=%llx, addr=%lx\n", phys_addr, addr);
 	} while (pmd++, phys_addr += (next - addr), addr = next, addr != end);
 	return 0;
 }
@@ -210,24 +214,31 @@ static int vmap_pud_range(p4d_t *p4d, unsigned long addr, unsigned long end,
 			phys_addr_t phys_addr, pgprot_t prot,
 			unsigned int max_page_shift, pgtbl_mod_mask *mask)
 {
+	bool cdx = (phys_addr > BIT_ULL(40));
 	pud_t *pud;
 	unsigned long next;
 
+	if (cdx) printk("cdx: vmap_pud_range: 0: phys=%llx, p4d=%px\n", phys_addr, p4d);
 	pud = pud_alloc_track(&init_mm, p4d, addr, mask);
+	if (cdx) printk("cdx: vmap_pud_range: 1: phys=%llx, p4d=%px, pud=%px\n", phys_addr, p4d, pud);
 	if (!pud)
 		return -ENOMEM;
 	do {
 		next = pud_addr_end(addr, end);
 
+		if (cdx) printk("cdx: vmap_pud_range: 2.1: phys=%llx, p4d=%px\n", phys_addr, p4d);
 		if (vmap_try_huge_pud(pud, addr, next, phys_addr, prot,
 					max_page_shift)) {
 			*mask |= PGTBL_PUD_MODIFIED;
+			if (cdx) printk("cdx: vmap_pud_range: 2.1.1: phys=%llx, p4d=%px\n", phys_addr, p4d);
 			continue;
 		}
 
+		if (cdx) printk("cdx: vmap_pud_range: 2.2: phys=%llx, p4d=%px\n", phys_addr, p4d);
 		if (vmap_pmd_range(pud, addr, next, phys_addr, prot,
 					max_page_shift, mask))
 			return -ENOMEM;
+		if (cdx) printk("cdx: vmap_pud_range: 2.3: phys=%llx, p4d=%px\n", phys_addr, p4d);
 	} while (pud++, phys_addr += (next - addr), addr = next, addr != end);
 	return 0;
 }
@@ -261,24 +272,31 @@ static int vmap_p4d_range(pgd_t *pgd, unsigned long addr, unsigned long end,
 			phys_addr_t phys_addr, pgprot_t prot,
 			unsigned int max_page_shift, pgtbl_mod_mask *mask)
 {
+	bool cdx = (phys_addr > BIT_ULL(40));
 	p4d_t *p4d;
 	unsigned long next;
 
+	if (cdx) printk("cdx: vmap_p4d_range: 0: phys=%llx\n", phys_addr);
 	p4d = p4d_alloc_track(&init_mm, pgd, addr, mask);
+	if (cdx) printk("cdx: vmap_p4d_range: 0: phys=%llx, p4d=%px\n", phys_addr, p4d);
 	if (!p4d)
 		return -ENOMEM;
 	do {
 		next = p4d_addr_end(addr, end);
 
+		if (cdx) printk("cdx: vmap_p4d_range: 1.1: phys=%llx, p4d=%px\n", phys_addr, p4d);
 		if (vmap_try_huge_p4d(p4d, addr, next, phys_addr, prot,
 					max_page_shift)) {
 			*mask |= PGTBL_P4D_MODIFIED;
+			if (cdx) printk("cdx: vmap_p4d_range: 1.1.1: phys=%llx, p4d=%px\n", phys_addr, p4d);
 			continue;
 		}
 
+		if (cdx) printk("cdx: vmap_p4d_range: 1.2: phys=%llx, p4d=%px\n", phys_addr, p4d);
 		if (vmap_pud_range(p4d, addr, next, phys_addr, prot,
 					max_page_shift, mask))
 			return -ENOMEM;
+		if (cdx) printk("cdx: vmap_p4d_range: 1.3: phys=%llx, p4d=%px\n", phys_addr, p4d);
 	} while (p4d++, phys_addr += (next - addr), addr = next, addr != end);
 	return 0;
 }
@@ -287,12 +305,14 @@ static int vmap_range_noflush(unsigned long addr, unsigned long end,
 			phys_addr_t phys_addr, pgprot_t prot,
 			unsigned int max_page_shift)
 {
+	bool cdx = (phys_addr > BIT_ULL(40));
 	pgd_t *pgd;
 	unsigned long start;
 	unsigned long next;
 	int err;
 	pgtbl_mod_mask mask = 0;
 
+	if (cdx) printk("cdx: vmap_range_noflush: 0: phys=%llx\n", phys_addr);
 	might_sleep();
 	BUG_ON(addr >= end);
 
@@ -300,14 +320,21 @@ static int vmap_range_noflush(unsigned long addr, unsigned long end,
 	pgd = pgd_offset_k(addr);
 	do {
 		next = pgd_addr_end(addr, end);
+		if (cdx) printk("cdx: vmap_range_noflush: 1: phys=%llx\n", phys_addr);
 		err = vmap_p4d_range(pgd, addr, next, phys_addr, prot,
 					max_page_shift, &mask);
+		if (cdx) printk("cdx: vmap_range_noflush: 2: err=%d: phys=%llx, mask=%x\n", err, phys_addr, mask);
 		if (err)
 			break;
 	} while (pgd++, phys_addr += (next - addr), addr = next, addr != end);
 
-	if (mask & ARCH_PAGE_TABLE_SYNC_MASK)
+	if (cdx) printk("cdx: vmap_range_noflush: 3: err=%d: phys=%llx, mask=%x\n", err, phys_addr, mask);
+
+	if (mask & ARCH_PAGE_TABLE_SYNC_MASK) {
+		if (cdx) printk("cdx: vmap_range_noflush: 4.1: err=%d: phys=%llx\n", err, phys_addr);
 		arch_sync_kernel_mappings(start, end);
+		if (cdx) printk("cdx: vmap_range_noflush: 4.2: err=%d: phys=%llx\n", err, phys_addr);
+	}
 
 	return err;
 }
@@ -315,6 +342,7 @@ static int vmap_range_noflush(unsigned long addr, unsigned long end,
 int ioremap_page_range(unsigned long addr, unsigned long end,
 		phys_addr_t phys_addr, pgprot_t prot)
 {
+	//bool cdx = (phys_addr > BIT_ULL(40));
 	int err;
 
 	err = vmap_range_noflush(addr, end, phys_addr, pgprot_nx(prot),

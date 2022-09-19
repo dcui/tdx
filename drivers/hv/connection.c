@@ -77,6 +77,7 @@ int vmbus_negotiate_version(struct vmbus_channel_msginfo *msginfo, u32 version)
 	struct vmbus_channel_initiate_contact *msg;
 	unsigned long flags;
 
+	printk("cdx: %s, line %d, trying ver = %d\n", __func__, __LINE__, version);
 	init_completion(&msginfo->waitevent);
 
 	msg = (struct vmbus_channel_initiate_contact *)msginfo->msg;
@@ -85,6 +86,7 @@ int vmbus_negotiate_version(struct vmbus_channel_msginfo *msginfo, u32 version)
 	msg->header.msgtype = CHANNELMSG_INITIATE_CONTACT;
 	msg->vmbus_version_requested = version;
 
+	printk("cdx: %s, line %d, trying ver = %d\n", __func__, __LINE__, version);
 	/*
 	 * VMBus protocol 5.0 (VERSION_WIN10_V5) and higher require that we must
 	 * use VMBUS_MESSAGE_CONNECTION_ID_4 for the Initiate Contact Message,
@@ -97,13 +99,16 @@ int vmbus_negotiate_version(struct vmbus_channel_msginfo *msginfo, u32 version)
 	 * On old hosts, we should always use VMBUS_MESSAGE_CONNECTION_ID (1).
 	 */
 	if (version >= VERSION_WIN10_V5) {
+		printk("cdx: %s, line %d, trying ver = %d\n", __func__, __LINE__, version);
 		msg->msg_sint = VMBUS_MESSAGE_SINT;
 		vmbus_connection.msg_conn_id = VMBUS_MESSAGE_CONNECTION_ID_4;
 	} else {
+		printk("cdx: %s, line %d, trying ver = %d\n", __func__, __LINE__, version);
 		msg->interrupt_page = virt_to_phys(vmbus_connection.int_page);
 		vmbus_connection.msg_conn_id = VMBUS_MESSAGE_CONNECTION_ID;
 	}
 
+	printk("cdx: %s, line %d, trying ver = %d\n", __func__, __LINE__, version);
 	msg->monitor_page1 = vmbus_connection.monitor_pages_pa[0];
 	msg->monitor_page2 = vmbus_connection.monitor_pages_pa[1];
 
@@ -119,10 +124,12 @@ int vmbus_negotiate_version(struct vmbus_channel_msginfo *msginfo, u32 version)
 
 	spin_unlock_irqrestore(&vmbus_connection.channelmsg_lock, flags);
 
+	printk("cdx: %s, line %d, trying ver = %d\n", __func__, __LINE__, version);
 	ret = vmbus_post_msg(msg,
 			     sizeof(struct vmbus_channel_initiate_contact),
 			     true);
 
+	printk("cdx: %s, line %d, trying ver = %d, ret=%d\n", __func__, __LINE__, version, ret);
 	trace_vmbus_negotiate_version(msg, ret);
 
 	if (ret != 0) {
@@ -134,7 +141,9 @@ int vmbus_negotiate_version(struct vmbus_channel_msginfo *msginfo, u32 version)
 	}
 
 	/* Wait for the connection response */
+	printk("cdx: %s, line %d, trying ver = %d\n", __func__, __LINE__, version);
 	wait_for_completion(&msginfo->waitevent);
+	printk("cdx: %s, line %d, trying ver = %d\n", __func__, __LINE__, version);
 
 	spin_lock_irqsave(&vmbus_connection.channelmsg_lock, flags);
 	list_del(&msginfo->msglistentry);
@@ -142,15 +151,18 @@ int vmbus_negotiate_version(struct vmbus_channel_msginfo *msginfo, u32 version)
 
 	/* Check if successful */
 	if (msginfo->response.version_response.version_supported) {
+		printk("cdx: %s, line %d, trying ver = %d\n", __func__, __LINE__, version);
 		vmbus_connection.conn_state = CONNECTED;
 
 		if (version >= VERSION_WIN10_V5)
 			vmbus_connection.msg_conn_id =
 				msginfo->response.version_response.msg_conn_id;
 	} else {
+		printk("cdx: %s, line %d, trying ver = %d\n", __func__, __LINE__, version);
 		return -ECONNREFUSED;
 	}
 
+	printk("cdx: %s, line %d, trying ver = %d, ret=%d\n", __func__, __LINE__, version, ret);
 	return ret;
 }
 
@@ -250,40 +262,63 @@ int vmbus_connect(void)
 		 * Isolation VM with AMD SNP needs to access monitor page via
 		 * address space above shared gpa boundary.
 		 */
-		if (hv_isolation_type_snp()) {
+		if (1 || hv_isolation_type_snp()) { //cdx
 			vmbus_connection.monitor_pages_pa[0] +=
 				ms_hyperv.shared_gpa_boundary;
 			vmbus_connection.monitor_pages_pa[1] +=
 				ms_hyperv.shared_gpa_boundary;
 
+			printk("cdx: vmbus_connect pa=0x%llx, 0x%llx\n",
+				vmbus_connection.monitor_pages_pa[0], vmbus_connection.monitor_pages_pa[1]);
+
 			vmbus_connection.monitor_pages[0]
 				= memremap(vmbus_connection.monitor_pages_pa[0],
 					   HV_HYP_PAGE_SIZE,
 					   MEMREMAP_WB);
+			printk("cdx: %s, line %d, %px\n", __func__, __LINE__, vmbus_connection.monitor_pages[0]);
 			if (!vmbus_connection.monitor_pages[0]) {
 				ret = -ENOMEM;
 				goto cleanup;
 			}
 
+			printk("cdx: %s, line %d\n", __func__, __LINE__);
 			vmbus_connection.monitor_pages[1]
 				= memremap(vmbus_connection.monitor_pages_pa[1],
 					   HV_HYP_PAGE_SIZE,
 					   MEMREMAP_WB);
+			printk("cdx: %s, line %d, %px\n", __func__, __LINE__, vmbus_connection.monitor_pages[0]);
 			if (!vmbus_connection.monitor_pages[1]) {
 				ret = -ENOMEM;
 				goto cleanup;
 			}
+			printk("cdx: %s, line %d\n", __func__, __LINE__);
 		}
 
 		/*
 		 * Set memory host visibility hvcall smears memory
 		 * and so zero monitor pages here.
 		 */
+		printk("cdx: %s, line %d: %px, %px\n", __func__, __LINE__, vmbus_connection.monitor_pages[0],
+			vmbus_connection.monitor_pages[1]);
+		mdelay(10000);
+		{
+			extern  volatile int ve_print;;
+			ve_print = 1;
+			mb();
+		}
 		memset(vmbus_connection.monitor_pages[0], 0x00,
 		       HV_HYP_PAGE_SIZE);
+		mdelay(10000);
+		printk("cdx: %s, line %d\n", __func__, __LINE__);
+		mdelay(10000);
 		memset(vmbus_connection.monitor_pages[1], 0x00,
 		       HV_HYP_PAGE_SIZE);
+		mdelay(10000);
+		printk("cdx: %s, line %d\n", __func__, __LINE__);
+		mdelay(10000);
 
+	} else {
+		WARN_ON(1);
 	}
 
 	msginfo = kzalloc(sizeof(*msginfo) +
@@ -301,8 +336,11 @@ int vmbus_connect(void)
 	 * version.
 	 */
 
+	printk("cdx: %s, line %d\n", __func__, __LINE__);
 	for (i = 0; ; i++) {
+		printk("cdx: %s, line %d, i = %d\n", __func__, __LINE__, i);
 		if (i == ARRAY_SIZE(vmbus_versions)) {
+			printk("cdx: %s, line %d, i = %d\n", __func__, __LINE__, i);
 			ret = -EDOM;
 			goto cleanup;
 		}
@@ -311,12 +349,16 @@ int vmbus_connect(void)
 		if (version > max_version)
 			continue;
 
+		printk("cdx: %s, line %d, i = %d\n", __func__, __LINE__, i);
 		ret = vmbus_negotiate_version(msginfo, version);
+		printk("cdx: %s, line %d, i = %d, ret=%d\n", __func__, __LINE__, i, ret);
 		if (ret == -ETIMEDOUT)
 			goto cleanup;
 
+		printk("cdx: %s, line %d, i = %d\n", __func__, __LINE__, i);
 		if (vmbus_connection.conn_state == CONNECTED)
 			break;
+		printk("cdx: %s, line %d, i = %d\n", __func__, __LINE__, i);
 	}
 
 	if (hv_is_isolation_supported() && version < VERSION_WIN10_V5_2) {

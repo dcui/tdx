@@ -147,7 +147,7 @@ int hv_synic_alloc(void)
 		 * Synic message and event pages are allocated by paravisor.
 		 * Skip these pages allocation here.
 		 */
-		if (!hv_isolation_type_snp()) {
+		if (!hv_isolation_type_snp()) { //cdx
 			hv_cpu->synic_message_page =
 				(void *)get_zeroed_page(GFP_ATOMIC);
 			if (hv_cpu->synic_message_page == NULL) {
@@ -212,6 +212,7 @@ void hv_synic_enable_regs(unsigned int cpu)
 	union hv_synic_sint shared_sint;
 	union hv_synic_scontrol sctrl;
 
+	printk("cdx: %s, line %d\n", __func__, __LINE__);
 	/* Setup the Synic's message page */
 	simp.as_uint64 = hv_get_register(HV_REGISTER_SIMP);
 	simp.simp_enabled = 1;
@@ -220,32 +221,58 @@ void hv_synic_enable_regs(unsigned int cpu)
 		hv_cpu->synic_message_page
 			= memremap(simp.base_simp_gpa << HV_HYP_PAGE_SHIFT,
 				   HV_HYP_PAGE_SIZE, MEMREMAP_WB);
+		printk("cdx: %s, line %d\n", __func__, __LINE__);
 		if (!hv_cpu->synic_message_page)
 			pr_err("Fail to map syinc message page.\n");
 	} else {
-		simp.base_simp_gpa = virt_to_phys(hv_cpu->synic_message_page)
+		printk("cdx: %s, line %d, orig gpa=%llx\n", __func__, __LINE__, virt_to_phys(hv_cpu->synic_message_page));
+		simp.base_simp_gpa = (BIT_ULL(47) + virt_to_phys(hv_cpu->synic_message_page))
 			>> HV_HYP_PAGE_SHIFT;
+
+		printk("cdx: %s, line %d, new  gpa=%llx\n", __func__, __LINE__, simp.base_simp_gpa << HV_HYP_PAGE_SHIFT);
+		hv_cpu->synic_message_page
+			= memremap(simp.base_simp_gpa << HV_HYP_PAGE_SHIFT,
+				   HV_HYP_PAGE_SIZE, MEMREMAP_WB);
+		printk("cdx: %s, line %d\n", __func__, __LINE__);
+		if (!hv_cpu->synic_message_page)
+			pr_err("Fail to map syinc message page.\n");
 	}
 
+	printk("cdx: %s, line %d\n", __func__, __LINE__);
 	hv_set_register(HV_REGISTER_SIMP, simp.as_uint64);
+	printk("cdx: %s, line %d\n", __func__, __LINE__);
 
 	/* Setup the Synic's event page */
 	siefp.as_uint64 = hv_get_register(HV_REGISTER_SIEFP);
 	siefp.siefp_enabled = 1;
 
 	if (hv_isolation_type_snp()) {
+		printk("cdx: %s, line %d\n", __func__, __LINE__);
 		hv_cpu->synic_event_page =
 			memremap(siefp.base_siefp_gpa << HV_HYP_PAGE_SHIFT,
 				 HV_HYP_PAGE_SIZE, MEMREMAP_WB);
 
+		printk("cdx: %s, line %d\n", __func__, __LINE__);
 		if (!hv_cpu->synic_event_page)
 			pr_err("Fail to map syinc event page.\n");
 	} else {
-		siefp.base_siefp_gpa = virt_to_phys(hv_cpu->synic_event_page)
+		printk("cdx: %s, line %d\n", __func__, __LINE__);
+		siefp.base_siefp_gpa = (BIT_ULL(47) + virt_to_phys(hv_cpu->synic_event_page))
 			>> HV_HYP_PAGE_SHIFT;
+
+		printk("cdx: %s, line %d\n", __func__, __LINE__);
+		hv_cpu->synic_event_page =
+			memremap(siefp.base_siefp_gpa << HV_HYP_PAGE_SHIFT,
+				 HV_HYP_PAGE_SIZE, MEMREMAP_WB);
+
+		printk("cdx: %s, line %d\n", __func__, __LINE__);
+		if (!hv_cpu->synic_event_page)
+			pr_err("Fail to map syinc event page.\n");
 	}
 
+	printk("cdx: %s, line %d\n", __func__, __LINE__);
 	hv_set_register(HV_REGISTER_SIEFP, siefp.as_uint64);
+	printk("cdx: %s, line %d, irq=%d\n", __func__, __LINE__, vmbus_irq);
 
 	/* Setup the shared SINT. */
 	if (vmbus_irq != -1)
@@ -266,21 +293,27 @@ void hv_synic_enable_regs(unsigned int cpu)
 #else
 	shared_sint.auto_eoi = 0;
 #endif
+	printk("cdx: %s, line %d\n", __func__, __LINE__);
 	hv_set_register(HV_REGISTER_SINT0 + VMBUS_MESSAGE_SINT,
 				shared_sint.as_uint64);
+	printk("cdx: %s, line %d\n", __func__, __LINE__);
 
 	/* Enable the global synic bit */
 	sctrl.as_uint64 = hv_get_register(HV_REGISTER_SCONTROL);
 	sctrl.enable = 1;
 
 	hv_set_register(HV_REGISTER_SCONTROL, sctrl.as_uint64);
+	printk("cdx: %s, line %d\n", __func__, __LINE__);
 }
 
 int hv_synic_init(unsigned int cpu)
 {
+	printk("cdx: %s, line %d\n", __func__, __LINE__);
 	hv_synic_enable_regs(cpu);
 
+	printk("cdx: %s, line %d\n", __func__, __LINE__);
 	hv_stimer_legacy_init(cpu, VMBUS_MESSAGE_SINT);
+	printk("cdx: %s, line %d\n", __func__, __LINE__);
 
 	return 0;
 }
@@ -297,6 +330,7 @@ void hv_synic_disable_regs(unsigned int cpu)
 	union hv_synic_siefp siefp;
 	union hv_synic_scontrol sctrl;
 
+	printk("cdx: %s, line %d\n", __func__, __LINE__);
 	shared_sint.as_uint64 = hv_get_register(HV_REGISTER_SINT0 +
 					VMBUS_MESSAGE_SINT);
 
@@ -304,9 +338,11 @@ void hv_synic_disable_regs(unsigned int cpu)
 
 	/* Need to correctly cleanup in the case of SMP!!! */
 	/* Disable the interrupt */
+	printk("cdx: %s, line %d\n", __func__, __LINE__);
 	hv_set_register(HV_REGISTER_SINT0 + VMBUS_MESSAGE_SINT,
 				shared_sint.as_uint64);
 
+	printk("cdx: %s, line %d\n", __func__, __LINE__);
 	simp.as_uint64 = hv_get_register(HV_REGISTER_SIMP);
 	/*
 	 * In Isolation VM, sim and sief pages are allocated by
@@ -320,7 +356,9 @@ void hv_synic_disable_regs(unsigned int cpu)
 	else
 		simp.base_simp_gpa = 0;
 
+	printk("cdx: %s, line %d\n", __func__, __LINE__);
 	hv_set_register(HV_REGISTER_SIMP, simp.as_uint64);
+	printk("cdx: %s, line %d\n", __func__, __LINE__);
 
 	siefp.as_uint64 = hv_get_register(HV_REGISTER_SIEFP);
 	siefp.siefp_enabled = 0;
@@ -330,15 +368,19 @@ void hv_synic_disable_regs(unsigned int cpu)
 	else
 		siefp.base_siefp_gpa = 0;
 
+	printk("cdx: %s, line %d\n", __func__, __LINE__);
 	hv_set_register(HV_REGISTER_SIEFP, siefp.as_uint64);
+	printk("cdx: %s, line %d\n", __func__, __LINE__);
 
 	/* Disable the global synic bit */
 	sctrl.as_uint64 = hv_get_register(HV_REGISTER_SCONTROL);
 	sctrl.enable = 0;
 	hv_set_register(HV_REGISTER_SCONTROL, sctrl.as_uint64);
+	printk("cdx: %s, line %d\n", __func__, __LINE__);
 
 	if (vmbus_irq != -1)
 		disable_percpu_irq(vmbus_irq);
+	printk("cdx: %s, line %d\n", __func__, __LINE__);
 }
 
 #define HV_MAX_TRIES 3
@@ -382,6 +424,7 @@ int hv_synic_cleanup(unsigned int cpu)
 	struct vmbus_channel *channel, *sc;
 	bool channel_found = false;
 
+	printk("cdx: %s, line %d\n", __func__, __LINE__);
 	if (vmbus_connection.conn_state != CONNECTED)
 		goto always_cleanup;
 
@@ -392,6 +435,7 @@ int hv_synic_cleanup(unsigned int cpu)
 	 * path where the vmbus is already disconnected, the CPU must be
 	 * allowed to shut down.
 	 */
+	printk("cdx: %s, line %d\n", __func__, __LINE__);
 	if (cpu == VMBUS_CONNECT_CPU)
 		return -EBUSY;
 
@@ -430,13 +474,17 @@ int hv_synic_cleanup(unsigned int cpu)
 	 * to process such bits.  If bits are still set after this operation
 	 * and VMBus is connected, fail the CPU offlining operation.
 	 */
+	printk("cdx: %s, line %d\n", __func__, __LINE__);
 	if (vmbus_proto_version >= VERSION_WIN10_V4_1 && hv_synic_event_pending())
 		return -EBUSY;
 
 always_cleanup:
+	printk("cdx: %s, line %d\n", __func__, __LINE__);
 	hv_stimer_legacy_cleanup(cpu);
+	printk("cdx: %s, line %d\n", __func__, __LINE__);
 
 	hv_synic_disable_regs(cpu);
+	printk("cdx: %s, line %d\n", __func__, __LINE__);
 
 	return 0;
 }

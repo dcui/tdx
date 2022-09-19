@@ -49,6 +49,7 @@ struct ve_info {
 	u64 gpa;
 	u32 instr_len;
 	u32 instr_info;
+	int cdx_ret;
 };
 
 #ifdef CONFIG_INTEL_TDX_GUEST

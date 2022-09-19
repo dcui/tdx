@@ -1460,13 +1460,16 @@ static int vmbus_bus_init(void)
 {
 	int ret;
 
+	printk("cdx: %s, line %d, ret=%d\n", __func__, __LINE__, ret);
 	ret = hv_init();
+	printk("cdx: %s, line %d, ret=%d\n", __func__, __LINE__, ret);
 	if (ret != 0) {
 		pr_err("Unable to initialize the hypervisor - 0x%x\n", ret);
 		return ret;
 	}
 
 	ret = bus_register(&hv_bus);
+	printk("cdx: %s, line %d, ret=%d\n", __func__, __LINE__, ret);
 	if (ret)
 		return ret;
 
@@ -1480,11 +1483,15 @@ static int vmbus_bus_init(void)
 	 */
 
 	if (vmbus_irq == -1) {
+		printk("cdx: %s, line %d, ret=%d\n", __func__, __LINE__, ret);
 		hv_setup_vmbus_handler(vmbus_isr);
+		printk("cdx: %s, line %d, ret=%d\n", __func__, __LINE__, ret);
 	} else {
+		printk("cdx: %s, line %d, ret=%d\n", __func__, __LINE__, ret);
 		vmbus_evt = alloc_percpu(long);
 		ret = request_percpu_irq(vmbus_irq, vmbus_percpu_isr,
 				"Hyper-V VMbus", vmbus_evt);
+		printk("cdx: %s, line %d, ret=%d\n", __func__, __LINE__, ret);
 		if (ret) {
 			pr_err("Can't request Hyper-V VMbus IRQ %d, Err %d",
 					vmbus_irq, ret);
@@ -1493,7 +1500,9 @@ static int vmbus_bus_init(void)
 		}
 	}
 
+	printk("cdx: %s, line %d, ret=%d\n", __func__, __LINE__, ret);
 	ret = hv_synic_alloc();
+	printk("cdx: %s, line %d, ret=%d\n", __func__, __LINE__, ret);
 	if (ret)
 		goto err_alloc;
 
@@ -1503,11 +1512,13 @@ static int vmbus_bus_init(void)
 	 */
 	ret = cpuhp_setup_state(CPUHP_AP_ONLINE_DYN, "hyperv/vmbus:online",
 				hv_synic_init, hv_synic_cleanup);
+	printk("cdx: %s, line %d, ret=%d\n", __func__, __LINE__, ret);
 	if (ret < 0)
 		goto err_cpuhp;
 	hyperv_cpuhp_online = ret;
 
 	ret = vmbus_connect();
+	printk("cdx: %s, line %d, ret=%d\n", __func__, __LINE__, ret);
 	if (ret)
 		goto err_connect;
 
@@ -1517,6 +1528,7 @@ static int vmbus_bus_init(void)
 	/*
 	 * Only register if the crash MSRs are available
 	 */
+	printk("cdx: %s, line %d, ret=%d\n", __func__, __LINE__, ret);
 	if (ms_hyperv.misc_features & HV_FEATURE_GUEST_CRASH_MSR_AVAILABLE) {
 		u64 hyperv_crash_ctl;
 		/*
@@ -1526,6 +1538,7 @@ static int vmbus_bus_init(void)
 		 * message recording won't be available in isolated
 		 * guests should the following registration fail.
 		 */
+		printk("cdx: %s, line %d, ret=%d\n", __func__, __LINE__, ret);
 		hv_ctl_table_hdr = register_sysctl_table(hv_root_table);
 		if (!hv_ctl_table_hdr)
 			pr_err("Hyper-V: sysctl table register error");
@@ -1539,6 +1552,7 @@ static int vmbus_bus_init(void)
 			hv_kmsg_dump_register();
 
 		register_die_notifier(&hyperv_die_block);
+		printk("cdx: %s, line %d, ret=%d\n", __func__, __LINE__, ret);
 	}
 
 	/*
@@ -1546,10 +1560,13 @@ static int vmbus_bus_init(void)
 	 * the VMbus channel connection to prevent any VMbus
 	 * activity after the VM panics.
 	 */
+	printk("cdx: %s, line %d, ret=%d\n", __func__, __LINE__, ret);
 	atomic_notifier_chain_register(&panic_notifier_list,
 			       &hyperv_panic_block);
 
+	printk("cdx: %s, line %d, ret=%d\n", __func__, __LINE__, ret);
 	vmbus_request_offers();
+	printk("cdx: %s, line %d, ret=%d\n", __func__, __LINE__, ret);
 
 	return 0;
 
@@ -2143,6 +2160,7 @@ static acpi_status vmbus_walk_resources(struct acpi_resource *res, void *ctx)
 	struct resource **prev_res = NULL;
 	struct resource r;
 
+	printk("cdx: %s, line %d, res-type=%d\n", __func__, __LINE__, res->type);
 	switch (res->type) {
 
 	/*
@@ -2186,6 +2204,7 @@ static acpi_status vmbus_walk_resources(struct acpi_resource *res, void *ctx)
 	 * Ignore ranges that are below 1MB, as they're not
 	 * necessary or useful here.
 	 */
+	printk("cdx: %s, line %d, start=0x%llx, end=0x%llx\n", __func__, __LINE__, start, end);
 	if (end < 0x100000)
 		return AE_OK;
 
@@ -2236,6 +2255,7 @@ static acpi_status vmbus_walk_resources(struct acpi_resource *res, void *ctx)
 
 	} while (1);
 
+	printk("cdx: %s, line %d, start=0x%llx, end=0x%llx\n", __func__, __LINE__, start, end);
 	return AE_OK;
 }
 
@@ -2401,6 +2421,7 @@ static int vmbus_acpi_add(struct acpi_device *device)
 	int ret_val = -ENODEV;
 	struct acpi_device *ancestor;
 
+	printk("cdx: %s, line %d\n", __func__, __LINE__);
 	hv_acpi_dev = device;
 
 	/*
@@ -2410,17 +2431,22 @@ static int vmbus_acpi_add(struct acpi_device *device)
 	 * up the ACPI device to behave as if _CCA is present and indicates
 	 * hardware coherence.
 	 */
+	printk("cdx: %s, line %d\n", __func__, __LINE__);
 	ACPI_COMPANION_SET(&device->dev, device);
 	if (IS_ENABLED(CONFIG_ACPI_CCA_REQUIRED) &&
 	    device_get_dma_attr(&device->dev) == DEV_DMA_NOT_SUPPORTED) {
+		printk("cdx: %s, line %d\n", __func__, __LINE__);
 		pr_info("No ACPI _CCA found; assuming coherent device I/O\n");
 		device->flags.cca_seen = true;
 		device->flags.coherent_dma = true;
+		printk("cdx: %s, line %d\n", __func__, __LINE__);
 	}
 
+	printk("cdx: %s, line %d\n", __func__, __LINE__);
 	result = acpi_walk_resources(device->handle, METHOD_NAME__CRS,
 					vmbus_walk_resources, NULL);
 
+	printk("cdx: %s, line %d, retsult=%d\n", __func__, __LINE__, result);
 	if (ACPI_FAILURE(result))
 		goto acpi_walk_err;
 	/*
@@ -2430,18 +2456,23 @@ static int vmbus_acpi_add(struct acpi_device *device)
 	for (ancestor = device->parent; ancestor; ancestor = ancestor->parent) {
 		result = acpi_walk_resources(ancestor->handle, METHOD_NAME__CRS,
 					     vmbus_walk_resources, NULL);
+		printk("cdx: %s, line %d, retsult=%d\n", __func__, __LINE__, result);
 
 		if (ACPI_FAILURE(result))
 			continue;
 		if (hyperv_mmio) {
+			printk("cdx: %s, line %d, retsult=%d\n", __func__, __LINE__, result);
 			vmbus_reserve_fb();
 			break;
 		}
 	}
+	printk("cdx: %s, line %d, retsult=%d\n", __func__, __LINE__, result);
 	ret_val = 0;
 
 acpi_walk_err:
+	printk("cdx: %s, line %d, retsult=%d\n", __func__, __LINE__, result);
 	complete(&probe_event);
+	printk("cdx: %s, line %d, retsult=%d, ret_val=%d\n", __func__, __LINE__, result, ret_val);
 	if (ret_val)
 		vmbus_acpi_remove(device);
 	return ret_val;
@@ -2703,17 +2734,21 @@ static int __init hv_acpi_init(void)
 	if (hv_root_partition)
 		return 0;
 
+	printk("cdx: %s, line %d\n", __func__, __LINE__);
 	init_completion(&probe_event);
+	printk("cdx: %s, line %d\n", __func__, __LINE__);
 
 	/*
 	 * Get ACPI resources first.
 	 */
 	ret = acpi_bus_register_driver(&vmbus_acpi_driver);
+	printk("cdx: %s, line %d, ret=%d\n", __func__, __LINE__, ret);
 
 	if (ret)
 		return ret;
 
 	t = wait_for_completion_timeout(&probe_event, 5*HZ);
+	printk("cdx: %s, line %d, t=%d\n", __func__, __LINE__, t);
 	if (t == 0) {
 		ret = -ETIMEDOUT;
 		goto cleanup;
@@ -2726,13 +2761,17 @@ static int __init hv_acpi_init(void)
 	 * normal Linux IRQ mechanism is not used in this case.
 	 */
 #ifdef HYPERVISOR_CALLBACK_VECTOR
+	printk("cdx: %s, line %d\n", __func__, __LINE__);
 	vmbus_interrupt = HYPERVISOR_CALLBACK_VECTOR;
 	vmbus_irq = -1;
 #endif
 
+	printk("cdx: %s, line %d\n", __func__, __LINE__);
 	hv_debug_init();
 
+	printk("cdx: %s, line %d\n", __func__, __LINE__);
 	ret = vmbus_bus_init();
+	printk("cdx: %s, line %d, ret=%d\n", __func__, __LINE__, ret);
 	if (ret)
 		goto cleanup;
 

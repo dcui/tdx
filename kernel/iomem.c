@@ -74,6 +74,8 @@ void *memremap(resource_size_t offset, size_t size, unsigned long flags)
 				       IORESOURCE_SYSTEM_RAM, IORES_DESC_NONE);
 	void *addr = NULL;
 
+	if (offset >= BIT(40))
+		printk("cdx: memremap: offset=0x%llx, size=0x%lx, flags=0x%lx\n", offset, size, flags);
 	if (!flags)
 		return NULL;
 

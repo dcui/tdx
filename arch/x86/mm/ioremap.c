@@ -188,7 +188,9 @@ __ioremap_caller(resource_size_t phys_addr, unsigned long size,
 	pgprot_t prot;
 	int retval;
 	void __iomem *ret_addr;
+	bool cdx = (phys_addr > BIT_ULL(40));
 
+	if (cdx) printk("cdx: %s: line %d, p=%llx, sz=%lx, pcm=%d, enc=%d\n", __func__, __LINE__, phys_addr, size, pcm, encrypted);
 	/* Don't allow wraparound or zero size */
 	last_addr = phys_addr + size - 1;
 	if (!size || last_addr < phys_addr)
@@ -206,6 +208,7 @@ __ioremap_caller(resource_size_t phys_addr, unsigned long size,
 	/*
 	 * Don't allow anybody to remap normal RAM that we're using..
 	 */
+	if (cdx) printk("cdx: %s: line %d\n", __func__, __LINE__);
 	if (io_desc.flags & IORES_MAP_SYSTEM_RAM) {
 		WARN_ONCE(1, "ioremap on RAM at %pa - %pa\n",
 			  &phys_addr, &last_addr);
@@ -219,6 +222,7 @@ __ioremap_caller(resource_size_t phys_addr, unsigned long size,
 	phys_addr &= PHYSICAL_PAGE_MASK;
 	size = PAGE_ALIGN(last_addr+1) - phys_addr;
 
+	if (cdx) printk("cdx: %s: line %d: physical_mask=%llx, phys=%llx, sz=%lx,, off=%lx\n", __func__, __LINE__, physical_mask, phys_addr, size, offset);
 	retval = memtype_reserve(phys_addr, (u64)phys_addr + size,
 						pcm, &new_pcm);
 	if (retval) {
@@ -226,6 +230,7 @@ __ioremap_caller(resource_size_t phys_addr, unsigned long size,
 		return NULL;
 	}
 
+	if (cdx) printk("cdx: %s: line %d: p=%llx, sz=%lx,, off=%lx: pcm=%d,%d\n", __func__, __LINE__, phys_addr, size, offset, pcm, new_pcm);
 	if (pcm != new_pcm) {
 		if (!is_new_memtype_allowed(phys_addr, size, pcm, new_pcm)) {
 			printk(KERN_ERR
@@ -252,6 +257,7 @@ __ioremap_caller(resource_size_t phys_addr, unsigned long size,
 	else
 		prot = pgprot_decrypted(prot);
 
+	if (cdx) printk("cdx: %s: line %d: p=%llx, sz=%lx,, off=%lx: pcm=%d,%d, flag=%x\n", __func__, __LINE__, phys_addr, size,offset, pcm, new_pcm,     io_desc.flags);
 	switch (pcm) {
 	case _PAGE_CACHE_MODE_UC:
 	default:
@@ -278,6 +284,7 @@ __ioremap_caller(resource_size_t phys_addr, unsigned long size,
 	 * Ok, go for it..
 	 */
 	area = get_vm_area_caller(size, VM_IOREMAP, caller);
+	if (cdx) printk("cdx: %s: line %d, area=%px, sz=%lx, phys=%llx\n", __func__, __LINE__, area, size, phys_addr);
 	if (!area)
 		goto err_free_memtype;
 	area->phys_addr = phys_addr;
@@ -286,11 +293,14 @@ __ioremap_caller(resource_size_t phys_addr, unsigned long size,
 	if (memtype_kernel_map_sync(phys_addr, size, pcm))
 		goto err_free_area;
 
+	if (cdx) printk("cdx: %s: line %d, area=%px, sz=%lx\n", __func__, __LINE__, area, size);
 	if (ioremap_page_range(vaddr, vaddr + size, phys_addr, prot))
 		goto err_free_area;
 
 	ret_addr = (void __iomem *) (vaddr + offset);
+	if (cdx) printk("cdx: %s: line %d, area=%px, sz=%lx\n", __func__, __LINE__, area, size);
 	mmiotrace_ioremap(unaligned_phys_addr, unaligned_size, ret_addr);
+	if (cdx) printk("cdx: %s: line %d, area=%px, sz=%lx\n", __func__, __LINE__, area, size);
 
 	/*
 	 * Check if the request spans more than any BAR in the iomem resource

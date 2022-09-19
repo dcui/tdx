@@ -65,6 +65,7 @@ static inline u64 hv_do_hypercall(u64 control, void *input, void *output)
 	if (!hv_hypercall_pg)
 		return U64_MAX;
 
+	BUG_ON(1);
 	__asm__ __volatile__(CALL_NOSPEC
 			     : "=A" (hv_status),
 			       "+c" (input_address_lo), ASM_CALL_CONSTRAINT
@@ -98,6 +99,7 @@ static inline u64 hv_do_fast_hypercall8(u16 code, u64 input1)
 		u32 input1_hi = upper_32_bits(input1);
 		u32 input1_lo = lower_32_bits(input1);
 
+		BUG_ON(1);
 		__asm__ __volatile__ (CALL_NOSPEC
 				      : "=A"(hv_status),
 					"+c"(input1_lo),
@@ -116,7 +118,7 @@ static inline u64 hv_do_fast_hypercall16(u16 code, u64 input1, u64 input2)
 {
 	u64 hv_status, control = (u64)code | HV_HYPERCALL_FAST_BIT;
 
-	printk("cdx: %s, line %d\n", __func__, __LINE__);
+	WARN(1, "cdx: %s, line %d\n", __func__, __LINE__);
 #ifdef CONFIG_X86_64
 	{
 		WARN_ONCE(1, "cdx: %s, line %d\n", __func__, __LINE__);
@@ -136,6 +138,7 @@ static inline u64 hv_do_fast_hypercall16(u16 code, u64 input1, u64 input2)
 		u32 input2_hi = upper_32_bits(input2);
 		u32 input2_lo = lower_32_bits(input2);
 
+		BUG_ON(1);
 		__asm__ __volatile__ (CALL_NOSPEC
 				      : "=A"(hv_status),
 					"+c"(input1_lo), ASM_CALL_CONSTRAINT

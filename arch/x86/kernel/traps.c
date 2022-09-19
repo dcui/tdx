@@ -1349,24 +1349,26 @@ DEFINE_IDTENTRY(exc_device_not_available)
 #define VE_FAULT_STR "VE fault"
 
 volatile int ve_print;
-static void ve_raise_fault(struct pt_regs *regs, long error_code)
+static void ve_raise_fault(struct pt_regs *regs, struct ve_info *ve)
 {
-	if (ve_print) printk("cdx: %s, line %d, err_code=0x%lx\n", __func__, __LINE__, error_code);
+	long error_code = 0;
+	if (ve_print) { ve_print=0; printk("cdx: %s, line %d, err_code=0x%lx, reason=%lld, cdx_ret=%d\n",
+		 __func__, __LINE__, error_code, ve->exit_reason, ve->cdx_ret); ve_print=1;}
 	//mdelay(3000);
 	if (user_mode(regs)) {
-		if (ve_print) printk("cdx: %s, line %d, err_code=0x%lx\n", __func__, __LINE__, error_code);
+		if (ve_print) { ve_print=0; printk("cdx: %s, line %d, err_code=0x%lx\n", __func__, __LINE__, error_code); ve_print=1; }
 		gp_user_force_sig_segv(regs, X86_TRAP_VE, error_code, VE_FAULT_STR);
-		if (ve_print) printk("cdx: %s, line %d, err_code=0x%lx\n", __func__, __LINE__, error_code);
+		if (ve_print) { ve_print=0; printk("cdx: %s, line %d, err_code=0x%lx\n", __func__, __LINE__, error_code); ve_print=1; }
 		return;
 	}
 
-	if (ve_print) printk("cdx: %s, line %d, err_code=0x%lx\n", __func__, __LINE__, error_code);
+	if (ve_print) { ve_print=0; printk("cdx: %s, line %d, err_code=0x%lx\n", __func__, __LINE__, error_code); ve_print=1; }
 	if (gp_try_fixup_and_notify(regs, X86_TRAP_VE, error_code, VE_FAULT_STR))
 		return;
 
-	if (ve_print) printk("cdx: %s, line %d, err_code=0x%lx\n", __func__, __LINE__, error_code);
+	if (ve_print) { ve_print=0; printk("cdx: %s, line %d, err_code=0x%lx\n", __func__, __LINE__, error_code); ve_print=1; }
 	die_addr(VE_FAULT_STR, regs, error_code, 0);
-	if (ve_print) printk("cdx: %s, line %d, err_code=0x%lx\n", __func__, __LINE__, error_code);
+	if (ve_print) { ve_print=0; printk("cdx: %s, line %d, err_code=0x%lx\n", __func__, __LINE__, error_code); ve_print=1; }
 }
 
 /*
@@ -1421,9 +1423,8 @@ DEFINE_IDTENTRY(exc_virtualization_exception)
 	 * till TDGETVEINFO TDCALL is executed. This ensures that VE
 	 * info cannot be overwritten by a nested #VE.
 	 */
-	if (ve_print) { printk("cdx: %s, line %d\n", __func__, __LINE__); mdelay(3000); }
 	tdx_get_ve_info(&ve);
-	if (ve_print) { printk("cdx: %s, line %d\n", __func__, __LINE__); mdelay(3000); }
+	ve.cdx_ret = 1981;
 
 	cond_local_irq_enable(regs);
 
@@ -1431,12 +1432,11 @@ DEFINE_IDTENTRY(exc_virtualization_exception)
 	 * If tdx_handle_virt_exception() could not process
 	 * it successfully, treat it as #GP(0) and handle it.
 	 */
-	if (!tdx_handle_virt_exception(regs, &ve))
-		ve_raise_fault(regs, 0);
+	if (!tdx_handle_virt_exception(regs, &ve)) {
+		ve_raise_fault(regs, &ve);
+	}
 
-	if (ve_print) { printk("cdx: %s, line %d\n", __func__, __LINE__); mdelay(3000); }
 	cond_local_irq_disable(regs);
-	if (ve_print) { printk("cdx: %s, line %d\n", __func__, __LINE__); mdelay(3000); }
 }
 
 #endif

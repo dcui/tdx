@@ -1291,10 +1291,14 @@ static int __init acpi_bus_init(void)
 	int result;
 	acpi_status status;
 
+	printk("cdx: %s, line %d\n", __func__, __LINE__);
 	acpi_os_initialize1();
+	printk("cdx: %s, line %d\n", __func__, __LINE__);
 
 	status = acpi_load_tables();
+	printk("cdx: %s, line %d\n", __func__, __LINE__);
 	if (ACPI_FAILURE(status)) {
+		printk("cdx: %s, line %d\n", __func__, __LINE__);
 		pr_err("Unable to load the System Description Tables\n");
 		goto error1;
 	}
@@ -1309,55 +1313,71 @@ static int __init acpi_bus_init(void)
 	 * Do that before calling acpi_initialize_objects() which may trigger EC
 	 * address space accesses.
 	 */
+	printk("cdx: %s, line %d\n", __func__, __LINE__);
 	acpi_ec_ecdt_probe();
+	printk("cdx: %s, line %d\n", __func__, __LINE__);
 
 	status = acpi_enable_subsystem(ACPI_NO_ACPI_ENABLE);
+	printk("cdx: %s, line %d\n", __func__, __LINE__);
 	if (ACPI_FAILURE(status)) {
+		printk("cdx: %s, line %d\n", __func__, __LINE__);
 		pr_err("Unable to start the ACPI Interpreter\n");
 		goto error1;
 	}
 
 	status = acpi_initialize_objects(ACPI_FULL_INITIALIZATION);
+	printk("cdx: %s, line %d\n", __func__, __LINE__);
 	if (ACPI_FAILURE(status)) {
+		printk("cdx: %s, line %d\n", __func__, __LINE__);
 		pr_err("Unable to initialize ACPI objects\n");
 		goto error1;
 	}
 
 	/* Set capability bits for _OSC under processor scope */
+	printk("cdx: %s, line %d\n", __func__, __LINE__);
 	acpi_early_processor_osc();
+	printk("cdx: %s, line %d\n", __func__, __LINE__);
 
 	/*
 	 * _OSC method may exist in module level code,
 	 * so it must be run after ACPI_FULL_INITIALIZATION
 	 */
 	acpi_bus_osc_negotiate_platform_control();
+	printk("cdx: %s, line %d\n", __func__, __LINE__);
 	acpi_bus_osc_negotiate_usb_control();
+	printk("cdx: %s, line %d\n", __func__, __LINE__);
 
 	/*
 	 * _PDC control method may load dynamic SSDT tables,
 	 * and we need to install the table handler before that.
 	 */
 	status = acpi_install_table_handler(acpi_bus_table_handler, NULL);
+	printk("cdx: %s, line %d, status=%d\n", __func__, __LINE__, status);
 
 	acpi_sysfs_init();
+	printk("cdx: %s, line %d, status=%d\n", __func__, __LINE__, status);
 
 	acpi_early_processor_set_pdc();
+	printk("cdx: %s, line %d, status=%d\n", __func__, __LINE__, status);
 
 	/*
 	 * Maybe EC region is required at bus_scan/acpi_get_devices. So it
 	 * is necessary to enable it as early as possible.
 	 */
 	acpi_ec_dsdt_probe();
+	printk("cdx: %s, line %d, status=%d\n", __func__, __LINE__, status);
 
 	pr_info("Interpreter enabled\n");
 
 	/* Initialize sleep structures */
 	acpi_sleep_init();
+	printk("cdx: %s, line %d, status=%d\n", __func__, __LINE__, status);
 
 	/*
 	 * Get the system interrupt model and evaluate \_PIC.
 	 */
 	result = acpi_bus_init_irq();
+	printk("cdx: %s, line %d, result=%d\n", __func__, __LINE__, result);
 	if (result)
 		goto error1;
 
@@ -1367,6 +1387,7 @@ static int __init acpi_bus_init(void)
 	status =
 	    acpi_install_notify_handler(ACPI_ROOT_OBJECT, ACPI_SYSTEM_NOTIFY,
 					&acpi_bus_notify, NULL);
+	printk("cdx: %s, line %d, status=%d\n", __func__, __LINE__, status);
 	if (ACPI_FAILURE(status)) {
 		pr_err("Unable to register for system notifications\n");
 		goto error1;
@@ -1375,9 +1396,12 @@ static int __init acpi_bus_init(void)
 	/*
 	 * Create the top ACPI proc directory
 	 */
+	printk("cdx: %s, line %d, status=%d\n", __func__, __LINE__, status);
 	acpi_root_dir = proc_mkdir(ACPI_BUS_FILE_ROOT, NULL);
 
+	printk("cdx: %s, line %d, status=%d\n", __func__, __LINE__, status);
 	result = bus_register(&acpi_bus_type);
+	printk("cdx: %s, line %d, result=%d\n", __func__, __LINE__, result);
 	if (!result)
 		return 0;
 
@@ -1394,38 +1418,58 @@ static int __init acpi_init(void)
 {
 	int result;
 
+	printk("cdx: %s, line %d, result=%d\n", __func__, __LINE__, result);
 	if (acpi_disabled) {
 		pr_info("Interpreter disabled.\n");
 		return -ENODEV;
 	}
 
 	acpi_kobj = kobject_create_and_add("acpi", firmware_kobj);
+	printk("cdx: %s, line %d, result=%d\n", __func__, __LINE__, result);
 	if (!acpi_kobj)
 		pr_debug("%s: kset create error\n", __func__);
 
 	init_prmt();
+	printk("cdx: %s, line %d, result=%d\n", __func__, __LINE__, result);
 	acpi_init_pcc();
+	printk("cdx: %s, line %d, result=%d\n", __func__, __LINE__, result);
 	result = acpi_bus_init();
+	printk("cdx: %s, line %d, result=%d\n", __func__, __LINE__, result);
 	if (result) {
 		kobject_put(acpi_kobj);
 		disable_acpi();
 		return result;
 	}
 
+	printk("cdx: %s, line %d, result=%d\n", __func__, __LINE__, result);
 	pci_mmcfg_late_init();
+	printk("cdx: %s, line %d, result=%d\n", __func__, __LINE__, result);
 	acpi_iort_init();
+	printk("cdx: %s, line %d, result=%d\n", __func__, __LINE__, result);
 	acpi_viot_early_init();
+	printk("cdx: %s, line %d, result=%d\n", __func__, __LINE__, result);
 	acpi_hest_init();
+	printk("cdx: %s, line %d, result=%d\n", __func__, __LINE__, result);
 	acpi_ghes_init();
+	printk("cdx: %s, line %d, result=%d\n", __func__, __LINE__, result);
 	acpi_scan_init();
+	printk("cdx: %s, line %d, result=%d\n", __func__, __LINE__, result);
 	acpi_ec_init();
+	printk("cdx: %s, line %d, result=%d\n", __func__, __LINE__, result);
 	acpi_debugfs_init();
+	printk("cdx: %s, line %d, result=%d\n", __func__, __LINE__, result);
 	acpi_sleep_proc_init();
+	printk("cdx: %s, line %d, result=%d\n", __func__, __LINE__, result);
 	acpi_wakeup_device_init();
+	printk("cdx: %s, line %d, result=%d\n", __func__, __LINE__, result);
 	acpi_debugger_init();
+	printk("cdx: %s, line %d, result=%d\n", __func__, __LINE__, result);
 	acpi_setup_sb_notify_handler();
+	printk("cdx: %s, line %d, result=%d\n", __func__, __LINE__, result);
 	acpi_viot_init();
+	printk("cdx: %s, line %d, result=%d\n", __func__, __LINE__, result);
 	acpi_agdi_init();
+	printk("cdx: %s, line %d, result=%d\n", __func__, __LINE__, result);
 	return 0;
 }
 

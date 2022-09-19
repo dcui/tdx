@@ -379,9 +379,13 @@ void acpi_tb_create_local_fadt(struct acpi_table_header *table, u32 length)
 	/* Take a copy of the Hardware Reduced flag */
 
 	acpi_gbl_reduced_hardware = FALSE;
-	if (acpi_gbl_FADT.flags & ACPI_FADT_HW_REDUCED) {
+	printk("cdx: acpi_tb_create_local_fadt: reduced: 1\n");
+	//if (acpi_gbl_FADT.flags & ACPI_FADT_HW_REDUCED) {
+	if (true) {
+		printk("cdx: acpi_tb_create_local_fadt: reduced: true!!!!\n");
 		acpi_gbl_reduced_hardware = TRUE;
 	}
+	printk("cdx: acpi_tb_create_local_fadt: reduced: 2\n");
 
 	/* Convert the local copy of the FADT to the common internal format */
 
