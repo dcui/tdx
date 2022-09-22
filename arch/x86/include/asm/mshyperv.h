@@ -62,10 +62,10 @@ static inline u64 hv_do_hypercall(u64 control, void *input, void *output)
 	u32 output_address_hi = upper_32_bits(output_address);
 	u32 output_address_lo = lower_32_bits(output_address);
 
+	BUG_ON(1);
 	if (!hv_hypercall_pg)
 		return U64_MAX;
 
-	BUG_ON(1);
 	__asm__ __volatile__(CALL_NOSPEC
 			     : "=A" (hv_status),
 			       "+c" (input_address_lo), ASM_CALL_CONSTRAINT

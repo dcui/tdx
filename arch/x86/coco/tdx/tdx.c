@@ -822,7 +822,7 @@ void __init tdx_early_init(void)
 	x86_platform.guest.enc_tlb_flush_required   = tdx_tlb_flush_required;
 	x86_platform.guest.enc_status_change_finish = tdx_enc_status_changed;
 
-	pr_info("Guest detected: 2: physical_mask=%llx, %d\n", physical_mask, __PHYSICAL_MASK_SHIFT);
-	physical_mask = (1ULL << __PHYSICAL_MASK_SHIFT) - 1;
-	pr_info("cdx: Guest detected: 3: physical_mask=%llx, %d\n", physical_mask, __PHYSICAL_MASK_SHIFT);
+	//pr_info("Guest detected: 2: physical_mask=%llx, %d\n", physical_mask, __PHYSICAL_MASK_SHIFT);
+	//physical_mask = (1ULL << __PHYSICAL_MASK_SHIFT) - 1;
+	//pr_info("cdx: Guest detected: 3: physical_mask=%llx, %d\n", physical_mask, __PHYSICAL_MASK_SHIFT);
 }

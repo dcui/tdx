@@ -229,13 +229,15 @@ void hv_synic_enable_regs(unsigned int cpu)
 		simp.base_simp_gpa = (BIT_ULL(47) + virt_to_phys(hv_cpu->synic_message_page))
 			>> HV_HYP_PAGE_SHIFT;
 
-		printk("cdx: %s, line %d, new  gpa=%llx\n", __func__, __LINE__, simp.base_simp_gpa << HV_HYP_PAGE_SHIFT);
+		printk("cdx: %s, line %d, new  gpa=%llx\n", __func__, __LINE__, (u64)simp.base_simp_gpa << HV_HYP_PAGE_SHIFT);
+#if 0
 		hv_cpu->synic_message_page
 			= memremap(simp.base_simp_gpa << HV_HYP_PAGE_SHIFT,
 				   HV_HYP_PAGE_SIZE, MEMREMAP_WB);
 		printk("cdx: %s, line %d\n", __func__, __LINE__);
 		if (!hv_cpu->synic_message_page)
 			pr_err("Fail to map syinc message page.\n");
+#endif
 	}
 
 	printk("cdx: %s, line %d\n", __func__, __LINE__);
@@ -261,6 +263,7 @@ void hv_synic_enable_regs(unsigned int cpu)
 			>> HV_HYP_PAGE_SHIFT;
 
 		printk("cdx: %s, line %d\n", __func__, __LINE__);
+#if 0
 		hv_cpu->synic_event_page =
 			memremap(siefp.base_siefp_gpa << HV_HYP_PAGE_SHIFT,
 				 HV_HYP_PAGE_SIZE, MEMREMAP_WB);
@@ -268,6 +271,7 @@ void hv_synic_enable_regs(unsigned int cpu)
 		printk("cdx: %s, line %d\n", __func__, __LINE__);
 		if (!hv_cpu->synic_event_page)
 			pr_err("Fail to map syinc event page.\n");
+#endif
 	}
 
 	printk("cdx: %s, line %d\n", __func__, __LINE__);

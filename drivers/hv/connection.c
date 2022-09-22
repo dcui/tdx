@@ -262,13 +262,14 @@ int vmbus_connect(void)
 		 * Isolation VM with AMD SNP needs to access monitor page via
 		 * address space above shared gpa boundary.
 		 */
+#if 0
 		if (1 || hv_isolation_type_snp()) { //cdx
 			vmbus_connection.monitor_pages_pa[0] +=
 				ms_hyperv.shared_gpa_boundary;
 			vmbus_connection.monitor_pages_pa[1] +=
 				ms_hyperv.shared_gpa_boundary;
 
-			printk("cdx: vmbus_connect pa=0x%llx, 0x%llx\n",
+			printk("cdx: 919, 17:16: vmbus_connect pa=0x%llx, 0x%llx\n",
 				vmbus_connection.monitor_pages_pa[0], vmbus_connection.monitor_pages_pa[1]);
 
 			vmbus_connection.monitor_pages[0]
@@ -293,6 +294,7 @@ int vmbus_connect(void)
 			}
 			printk("cdx: %s, line %d\n", __func__, __LINE__);
 		}
+#endif
 
 		/*
 		 * Set memory host visibility hvcall smears memory
@@ -300,7 +302,7 @@ int vmbus_connect(void)
 		 */
 		printk("cdx: %s, line %d: %px, %px\n", __func__, __LINE__, vmbus_connection.monitor_pages[0],
 			vmbus_connection.monitor_pages[1]);
-		mdelay(10000);
+		//mdelay(10000);
 		{
 			extern  volatile int ve_print;;
 			ve_print = 1;
@@ -308,14 +310,14 @@ int vmbus_connect(void)
 		}
 		memset(vmbus_connection.monitor_pages[0], 0x00,
 		       HV_HYP_PAGE_SIZE);
-		mdelay(10000);
+		//mdelay(10000);
 		printk("cdx: %s, line %d\n", __func__, __LINE__);
-		mdelay(10000);
+		//mdelay(10000);
 		memset(vmbus_connection.monitor_pages[1], 0x00,
 		       HV_HYP_PAGE_SIZE);
-		mdelay(10000);
+		//mdelay(10000);
 		printk("cdx: %s, line %d\n", __func__, __LINE__);
-		mdelay(10000);
+		//mdelay(10000);
 
 	} else {
 		WARN_ON(1);
