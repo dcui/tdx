@@ -69,7 +69,7 @@ EXPORT_SYMBOL_GPL(hv_stimer0_isr);
  */
 static irqreturn_t hv_stimer0_percpu_isr(int irq, void *dev_id)
 {
-//	printk("cdx: %s, line %d\n", __func__, __LINE__);
+	printk_ratelimited("cdx: %s, line %d\n", __func__, __LINE__);
 	hv_stimer0_isr();
 	return IRQ_HANDLED;
 }
@@ -133,11 +133,11 @@ static int hv_stimer_init(unsigned int cpu)
 {
 	struct clock_event_device *ce;
 
-//	printk("cdx: %s, line %d\n", __func__, __LINE__);
+	printk("cdx: %s, line %d\n", __func__, __LINE__);
 	if (!hv_clock_event)
 		return 0;
 
-//	printk("cdx: %s, line %d\n", __func__, __LINE__);
+	printk("cdx: %s, line %d\n", __func__, __LINE__);
 	ce = per_cpu_ptr(hv_clock_event, cpu);
 	ce->name = "Hyper-V clockevent";
 	ce->features = CLOCK_EVT_FEAT_ONESHOT;
@@ -151,7 +151,7 @@ static int hv_stimer_init(unsigned int cpu)
 					HV_CLOCK_HZ,
 					HV_MIN_DELTA_TICKS,
 					HV_MAX_MAX_DELTA_TICKS);
-//	printk("cdx: %s, line %d\n", __func__, __LINE__);
+	printk("cdx: %s, line %d\n", __func__, __LINE__);
 	return 0;
 }
 
@@ -249,13 +249,16 @@ int hv_stimer_alloc(bool have_percpu_irqs)
 	 * Hyper-V on x86.  In that case, return as error as Linux will use a
 	 * clockevent based on emulated LAPIC timer hardware.
 	 */
+	printk("cdx: %s, line %d\n", __func__, __LINE__);
 	if (!(ms_hyperv.features & HV_MSR_SYNTIMER_AVAILABLE))
 		return -EINVAL;
 
+	printk("cdx: %s, line %d\n", __func__, __LINE__);
 	hv_clock_event = alloc_percpu(struct clock_event_device);
 	if (!hv_clock_event)
 		return -ENOMEM;
 
+	printk("cdx: %s, line %d\n", __func__, __LINE__);
 	direct_mode_enabled = ms_hyperv.misc_features &
 			HV_STIMER_DIRECT_MODE_AVAILABLE;
 
@@ -264,15 +267,22 @@ int hv_stimer_alloc(bool have_percpu_irqs)
 	 * If Direct Mode isn't enabled, the remainder of the initialization
 	 * is done later by hv_stimer_legacy_init()
 	 */
+	printk("cdx: %s, line %d\n", __func__, __LINE__);
 	if (!direct_mode_enabled)
 		return 0;
 
+	printk("cdx: %s, line %d\n", __func__, __LINE__);
 	if (have_percpu_irqs) {
+		printk("cdx: %s, line %d\n", __func__, __LINE__);
 		ret = hv_setup_stimer0_irq();
+		printk("cdx: %s, line %d\n", __func__, __LINE__);
 		if (ret)
 			goto free_clock_event;
+		printk("cdx: %s, line %d\n", __func__, __LINE__);
 	} else {
+		printk("cdx: %s, line %d\n", __func__, __LINE__);
 		hv_setup_stimer0_handler(hv_stimer0_isr);
+		printk("cdx: %s, line %d\n", __func__, __LINE__);
 	}
 
 	/*
@@ -280,9 +290,11 @@ int hv_stimer_alloc(bool have_percpu_irqs)
 	 * can be done now with a CPUHP value in the same range
 	 * as other clockevent devices.
 	 */
+		printk("cdx: %s, line %d\n", __func__, __LINE__);
 	ret = cpuhp_setup_state(CPUHP_AP_HYPERV_TIMER_STARTING,
 			"clockevents/hyperv/stimer:starting",
 			hv_stimer_init, hv_stimer_cleanup);
+	printk("cdx: %s, line %d, ret=%d\n", __func__, __LINE__, ret);
 	if (ret < 0) {
 		hv_remove_stimer0_irq();
 		goto free_clock_event;

@@ -18,6 +18,7 @@
 #include <linux/clockchips.h>
 #include <linux/delay.h>
 #include <linux/interrupt.h>
+#include <linux/set_memory.h>
 #include <clocksource/hyperv_timer.h>
 #include <asm/mshyperv.h>
 #include "hyperv_vmbus.h"
@@ -161,13 +162,30 @@ int hv_synic_alloc(void)
 				pr_err("Unable to allocate SYNIC event page\n");
 				goto err;
 			}
-		}
+		} else WARN_ON(1);
 
 		hv_cpu->post_msg_page = (void *)get_zeroed_page(GFP_ATOMIC);
 		if (hv_cpu->post_msg_page == NULL) {
 			pr_err("Unable to allocate post msg page\n");
 			goto err;
 		}
+
+
+		//cdx: TDX........... and fully enlightened SNP
+		printk("cdx: %s, line %d\n", __func__, __LINE__);
+		BUG_ON(set_memory_decrypted((unsigned long)hv_cpu->synic_message_page, 1) != 0);
+		printk("cdx: %s, line %d\n", __func__, __LINE__);
+		BUG_ON(set_memory_decrypted((unsigned long)hv_cpu->synic_event_page, 1) != 0); 
+		printk("cdx: %s, line %d\n", __func__, __LINE__);
+		BUG_ON(set_memory_decrypted((unsigned long)hv_cpu->post_msg_page, 1) != 0);
+		printk("cdx: %s, line %d\n", __func__, __LINE__);
+
+		memset(hv_cpu->synic_message_page, 0, PAGE_SIZE);
+		printk("cdx: %s, line %d\n", __func__, __LINE__);
+		memset(hv_cpu->synic_event_page, 0, PAGE_SIZE);
+		printk("cdx: %s, line %d\n", __func__, __LINE__);
+		memset(hv_cpu->post_msg_page, 0, PAGE_SIZE);
+		printk("cdx: %s, line %d\n", __func__, __LINE__); 
 	}
 
 	return 0;

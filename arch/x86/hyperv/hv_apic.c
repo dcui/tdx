@@ -279,7 +279,7 @@ static void hv_send_ipi_self(int vector)
 void __init hv_apic_init(void)
 {
 	printk("cdx: %s, line %d\n", __func__, __LINE__);
-	if (ms_hyperv.hints & HV_X64_CLUSTER_IPI_RECOMMENDED) {
+	if (0 && ms_hyperv.hints & HV_X64_CLUSTER_IPI_RECOMMENDED) { //////////////////cdx
 		printk("cdx: %s, line %d\n", __func__, __LINE__);
 		pr_info("Hyper-V: Using IPI hypercalls\n");
 		/*
@@ -293,7 +293,7 @@ void __init hv_apic_init(void)
 		apic->send_IPI_allbutself = hv_send_ipi_allbutself;
 		apic->send_IPI_all = hv_send_ipi_all;
 		apic->send_IPI_self = hv_send_ipi_self;
-	} else { BUG_ON(1); }
+	} //else { BUG_ON(1); }
 
 	if (ms_hyperv.hints & HV_X64_APIC_ACCESS_RECOMMENDED) { // tdx: hyper-v returns 0
 		printk("cdx: %s, line %d\n", __func__, __LINE__);

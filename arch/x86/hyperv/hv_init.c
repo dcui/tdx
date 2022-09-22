@@ -364,15 +364,20 @@ static void __init hv_stimer_setup_percpu_clockev(void)
 	 * Ignore any errors in setting up stimer clockevents
 	 * as we can run with the LAPIC timer as a fallback.
 	 */
+	printk("cdx: %s, line %d\n", __func__, __LINE__);
 	(void)hv_stimer_alloc(false);
+	printk("cdx: %s, line %d\n", __func__, __LINE__);
 
 	/*
 	 * Still register the LAPIC timer, because the direct-mode STIMER is
 	 * not supported by old versions of Hyper-V. This also allows users
 	 * to switch to LAPIC timer via /sys, if they want to.
 	 */
-	if (old_setup_percpu_clockev)
+	if (old_setup_percpu_clockev) {
+		printk("cdx: %s, line %d\n", __func__, __LINE__);
 		old_setup_percpu_clockev();
+		printk("cdx: %s, line %d\n", __func__, __LINE__);
+	}
 }
 
 static void __init hv_get_partition_id(void)

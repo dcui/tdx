@@ -1333,20 +1333,30 @@ static void vmbus_isr(void)
 	void *page_addr;
 	struct hv_message *msg;
 
+	printk("cdx: %s, line %d\n", __func__, __LINE__);
 	vmbus_chan_sched(hv_cpu);
+	printk("cdx: %s, line %d\n", __func__, __LINE__);
 
 	page_addr = hv_cpu->synic_message_page;
 	msg = (struct hv_message *)page_addr + VMBUS_MESSAGE_SINT;
 
 	/* Check if there are actual msgs to be processed */
 	if (msg->header.message_type != HVMSG_NONE) {
+		printk("cdx: %s, line %d\n", __func__, __LINE__);
 		if (msg->header.message_type == HVMSG_TIMER_EXPIRED) {
+			printk("cdx: %s, line %d\n", __func__, __LINE__);
 			hv_stimer0_isr();
+			printk("cdx: %s, line %d\n", __func__, __LINE__);
 			vmbus_signal_eom(msg, HVMSG_TIMER_EXPIRED);
-		} else
+			printk("cdx: %s, line %d\n", __func__, __LINE__);
+		} else {
+			printk("cdx: %s, line %d\n", __func__, __LINE__);
 			tasklet_schedule(&hv_cpu->msg_dpc);
+			printk("cdx: %s, line %d\n", __func__, __LINE__);
+		}
 	}
 
+	printk("cdx: %s, line %d\n", __func__, __LINE__);
 	add_interrupt_randomness(vmbus_interrupt);
 }
 
@@ -1460,7 +1470,7 @@ static int vmbus_bus_init(void)
 {
 	int ret;
 
-	printk("cdx: %s, line %d, ret=%d\n", __func__, __LINE__, ret);
+	printk("cdx: %s, line %d, ret=%d\n", __func__, __LINE__, 0);
 	ret = hv_init();
 	printk("cdx: %s, line %d, ret=%d\n", __func__, __LINE__, ret);
 	if (ret != 0) {

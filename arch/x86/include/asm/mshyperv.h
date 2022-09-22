@@ -5,6 +5,7 @@
 #include <linux/types.h>
 #include <linux/nmi.h>
 #include <linux/msi.h>
+#include <linux/delay.h>
 #include <asm/io.h>
 #include <asm/hyperv-tlfs.h>
 #include <asm/nospec-branch.h>
@@ -36,18 +37,42 @@ int hv_call_deposit_pages(int node, u64 partition_id, u32 num_pages);
 int hv_call_add_logical_proc(int node, u32 lp_index, u32 acpi_id);
 int hv_call_create_vp(int node, u64 partition_id, u32 vp_index, u32 flags);
 
+// rax = __tdcall_hyperv(control, output_addr, input_addr);
+u64 __tdcall_hyperv(u64 control, u64 output_addr, u64 input_addr);
+
+//RE: TDX hypercall conventions
+static u64 tdcall_hyperv(u64 control, u64 input_addr, u64 output_addr)
+{
+        u64 rax;
+
+	printk("cdx: %s, line %d: control=0x%llx, input=0x%llx, output=0x%llx, calling\n", __func__, __LINE__, control, input_addr, output_addr);
+	mdelay(10000);
+	//https://access.redhat.com/articles/1406253
+	//                       %rdi,       %rsi,        %rdx
+        rax = __tdcall_hyperv(control, output_addr, input_addr);
+	printk("cdx: %s, line %d: control=0x%llx, input=0x%llx, output=0x%llx: called=0x%llx\n", __func__, __LINE__, control, input_addr, output_addr, rax);
+	mdelay(10000);
+
+        WARN_ON(rax);
+
+        return rax;
+}
+
 static inline u64 hv_do_hypercall(u64 control, void *input, void *output)
 {
 	u64 input_address = input ? virt_to_phys(input) : 0;
 	u64 output_address = output ? virt_to_phys(output) : 0;
 	u64 hv_status;
 
-	printk("cdx: %s, line %d\n", __func__, __LINE__);
 #ifdef CONFIG_X86_64
-	if (!hv_hypercall_pg)
-		return U64_MAX;
+	//if (!hv_hypercall_pg)
+	//	return U64_MAX;
 
-	WARN_ONCE(1, "cdx: %s, line %d\n", __func__, __LINE__);
+	//printk_ratelimited("cdx: %s, line %d\n", __func__, __LINE__);
+	printk("cdx: %s, line %d\n", __func__, __LINE__);
+	return tdcall_hyperv(control, input_address, output_address);
+#if 0
+
 	__asm__ __volatile__("mov %4, %%r8\n"
 			     CALL_NOSPEC
 			     : "=a" (hv_status), ASM_CALL_CONSTRAINT,
@@ -56,13 +81,14 @@ static inline u64 hv_do_hypercall(u64 control, void *input, void *output)
 				THUNK_TARGET(hv_hypercall_pg)
 			     : "cc", "memory", "r8", "r9", "r10", "r11");
 	printk("cdx: %s, line %d\n", __func__, __LINE__);
+#endif
 #else
 	u32 input_address_hi = upper_32_bits(input_address);
 	u32 input_address_lo = lower_32_bits(input_address);
 	u32 output_address_hi = upper_32_bits(output_address);
 	u32 output_address_lo = lower_32_bits(output_address);
 
-	BUG_ON(1);
+	BUG_ON(&tdcall_hyperv != 0);
 	if (!hv_hypercall_pg)
 		return U64_MAX;
 
@@ -83,8 +109,12 @@ static inline u64 hv_do_fast_hypercall8(u16 code, u64 input1)
 {
 	u64 hv_status, control = (u64)code | HV_HYPERCALL_FAST_BIT;
 
+	WARN(1, "cdx: %s, line %d\n", __func__, __LINE__);
+	//printk_ratelimited("cdx: %s, line %d\n", __func__, __LINE__);
 	printk("cdx: %s, line %d\n", __func__, __LINE__);
 #ifdef CONFIG_X86_64
+	return tdcall_hyperv(control, input1, 0);
+#if 0
 	{
 		WARN_ONCE(1, "cdx: %s, line %d\n", __func__, __LINE__);
 		__asm__ __volatile__(CALL_NOSPEC
@@ -94,12 +124,13 @@ static inline u64 hv_do_fast_hypercall8(u16 code, u64 input1)
 				     : "cc", "r8", "r9", "r10", "r11");
 	}
 	printk("cdx: %s, line %d\n", __func__, __LINE__);
+#endif
 #else
 	{
 		u32 input1_hi = upper_32_bits(input1);
 		u32 input1_lo = lower_32_bits(input1);
 
-		BUG_ON(1);
+		BUG_ON(&tdcall_hyperv != 0);
 		__asm__ __volatile__ (CALL_NOSPEC
 				      : "=A"(hv_status),
 					"+c"(input1_lo),
@@ -116,10 +147,14 @@ static inline u64 hv_do_fast_hypercall8(u16 code, u64 input1)
 /* Fast hypercall with 16 bytes of input */
 static inline u64 hv_do_fast_hypercall16(u16 code, u64 input1, u64 input2)
 {
-	u64 hv_status, control = (u64)code | HV_HYPERCALL_FAST_BIT;
+	u64  hv_status, control = (u64)code | HV_HYPERCALL_FAST_BIT;
 
 	WARN(1, "cdx: %s, line %d\n", __func__, __LINE__);
+	//printk_ratelimited("cdx: %s, line %d\n", __func__, __LINE__);
+	printk("cdx: %s, line %d\n", __func__, __LINE__);
 #ifdef CONFIG_X86_64
+	return tdcall_hyperv(control, input1, input2);
+#if 0
 	{
 		WARN_ONCE(1, "cdx: %s, line %d\n", __func__, __LINE__);
 		__asm__ __volatile__("mov %4, %%r8\n"
@@ -131,6 +166,7 @@ static inline u64 hv_do_fast_hypercall16(u16 code, u64 input1, u64 input2)
 				     : "cc", "r8", "r9", "r10", "r11");
 	}
 	printk("cdx: %s, line %d\n", __func__, __LINE__);
+#endif
 #else
 	{
 		u32 input1_hi = upper_32_bits(input1);
@@ -138,7 +174,7 @@ static inline u64 hv_do_fast_hypercall16(u16 code, u64 input1, u64 input2)
 		u32 input2_hi = upper_32_bits(input2);
 		u32 input2_lo = lower_32_bits(input2);
 
-		BUG_ON(1);
+		BUG_ON(&tdcall_hyperv != 0);
 		__asm__ __volatile__ (CALL_NOSPEC
 				      : "=A"(hv_status),
 					"+c"(input1_lo), ASM_CALL_CONSTRAINT
