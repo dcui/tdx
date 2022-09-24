@@ -85,10 +85,20 @@ bool acpi_sleep_state_supported(u8 sleep_state)
 	acpi_status status;
 	u8 type_a, type_b;
 
+#if 1
 	status = acpi_get_sleep_type_data(sleep_state, &type_a, &type_b);
+	printk("cdx: cnk: acpi_sleep_state_supported: sleep_state=%d, status=%d, red=%d, %llx, %llx\n",
+		sleep_state, status, acpi_gbl_reduced_hardware, acpi_gbl_FADT.sleep_control.address, acpi_gbl_FADT.sleep_status.address);
+
 	return ACPI_SUCCESS(status) && (!acpi_gbl_reduced_hardware
 		|| (acpi_gbl_FADT.sleep_control.address
 			&& acpi_gbl_FADT.sleep_status.address));
+
+#else
+	return ACPI_SUCCESS(status) && (!acpi_gbl_reduced_hardware
+		|| (acpi_gbl_FADT.sleep_control.address
+			&& acpi_gbl_FADT.sleep_status.address));
+#endif
 }
 
 #ifdef CONFIG_ACPI_SLEEP
@@ -1079,6 +1089,7 @@ int __init acpi_sleep_init(void)
 	acpi_sleep_hibernate_setup();
 
 	if (acpi_sleep_state_supported(ACPI_STATE_S5)) {
+		printk("cdx: cnk: acpi_sleep_init: S5=1\n");
 		sleep_states[ACPI_STATE_S5] = 1;
 
 		register_sys_off_handler(SYS_OFF_MODE_POWER_OFF_PREPARE,
@@ -1089,6 +1100,7 @@ int __init acpi_sleep_init(void)
 					 SYS_OFF_PRIO_FIRMWARE,
 					 acpi_power_off, NULL);
 	} else {
+		printk("cdx: cnk: acpi_sleep_init: S5=0\n");
 		acpi_no_s5 = true;
 	}
 

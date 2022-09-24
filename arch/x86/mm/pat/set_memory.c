@@ -2051,6 +2051,7 @@ static int __set_memory_enc_pgtable(unsigned long addr, int numpages, bool enc)
 
 	ret = __change_page_attr_set_clr(&cpa, 1);
 
+	WARN(ret, "cdx: __set_memory_enc_pgtable: 1: ret=%d, va=%lx, num_pg=v%d\n", ret, addr, numpages);
 	/*
 	 * After changing the encryption attribute, we need to flush TLBs again
 	 * in case any speculative TLB caching occurred (but no need to flush
@@ -2064,6 +2065,7 @@ static int __set_memory_enc_pgtable(unsigned long addr, int numpages, bool enc)
 	if (!ret) {
 		if (!x86_platform.guest.enc_status_change_finish(addr, numpages, enc))
 			ret = -EIO;
+		WARN(ret, "cdx: __set_memory_enc_pgtable: 2: ret=%d, va=%lx, num_pg=v%d, enc=%d\n", ret, addr, numpages, enc);
 	}
 
 	return ret;
@@ -2071,16 +2073,17 @@ static int __set_memory_enc_pgtable(unsigned long addr, int numpages, bool enc)
 
 static int __set_memory_enc_dec(unsigned long addr, int numpages, bool enc)
 {
+	return __set_memory_enc_pgtable(addr, numpages, enc);
 #if 0
 	if (hv_is_isolation_supported())
 		return hv_set_mem_host_visibility(addr, numpages, !enc);
-#endif
 
 //cdx
 	//if (cc_platform_has(CC_ATTR_MEM_ENCRYPT))
 		return __set_memory_enc_pgtable(addr, numpages, enc);
 
 	//return 0;
+#endif
 }
 
 int set_memory_encrypted(unsigned long addr, int numpages)

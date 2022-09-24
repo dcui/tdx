@@ -172,12 +172,18 @@ int hv_synic_alloc(void)
 
 
 		//cdx: TDX........... and fully enlightened SNP
-		printk("cdx: %s, line %d\n", __func__, __LINE__);
+		printk("cdx: %s, line %d: synic_message_page=%px, gpa=%llx\n", __func__, __LINE__,
+			hv_cpu->synic_message_page, slow_virt_to_phys(hv_cpu->synic_message_page));
 		BUG_ON(set_memory_decrypted((unsigned long)hv_cpu->synic_message_page, 1) != 0);
-		printk("cdx: %s, line %d\n", __func__, __LINE__);
+
+		printk("cdx: %s, line %d, synic_event_page=%px, gpa=%llx\n", __func__, __LINE__,
+			hv_cpu->synic_event_page, slow_virt_to_phys(hv_cpu->synic_event_page));
 		BUG_ON(set_memory_decrypted((unsigned long)hv_cpu->synic_event_page, 1) != 0); 
-		printk("cdx: %s, line %d\n", __func__, __LINE__);
+
+		printk("cdx: %s, line %d, post_msg_page==%px, gpa=%llx\n", __func__, __LINE__,
+			hv_cpu->post_msg_page, slow_virt_to_phys(hv_cpu->post_msg_page));
 		BUG_ON(set_memory_decrypted((unsigned long)hv_cpu->post_msg_page, 1) != 0);
+
 		printk("cdx: %s, line %d\n", __func__, __LINE__);
 
 		memset(hv_cpu->synic_message_page, 0, PAGE_SIZE);

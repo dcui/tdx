@@ -43,14 +43,23 @@ u64 __tdcall_hyperv(u64 control, u64 output_addr, u64 input_addr);
 //RE: TDX hypercall conventions
 static u64 tdcall_hyperv(u64 control, u64 input_addr, u64 output_addr)
 {
+	unsigned long flags;
         u64 rax;
 
-	printk("cdx: %s, line %d: control=0x%llx, input=0x%llx, output=0x%llx, calling\n", __func__, __LINE__, control, input_addr, output_addr);
-	mdelay(10000);
+	printk("cdx: %s, line %d: control=%llx, input=%llx, output=%llx, calling in 30s\n", __func__, __LINE__, control, input_addr, output_addr);
+	mdelay(20000);
+	local_irq_save(flags);
+
 	//https://access.redhat.com/articles/1406253
 	//                       %rdi,       %rsi,        %rdx
         rax = __tdcall_hyperv(control, output_addr, input_addr);
-	printk("cdx: %s, line %d: control=0x%llx, input=0x%llx, output=0x%llx: called=0x%llx\n", __func__, __LINE__, control, input_addr, output_addr, rax);
+	mdelay(10000);
+	printk("cdx: %s, line %d: control=%llx, input=%llx, output=%llx: called=%llx. delaying 30s\n", __func__, __LINE__, control, input_addr, output_addr, rax);
+	mdelay(10000);
+
+	local_irq_restore(flags);
+
+	printk("cdx: %s, line %d: control=%llx, input=%llx, output=%llx: called=%llx. delaying 30s\n", __func__, __LINE__, control, input_addr, output_addr, rax);
 	mdelay(10000);
 
         WARN_ON(rax);
@@ -70,6 +79,11 @@ static inline u64 hv_do_hypercall(u64 control, void *input, void *output)
 
 	//printk_ratelimited("cdx: %s, line %d\n", __func__, __LINE__);
 	printk("cdx: %s, line %d\n", __func__, __LINE__);
+	if (input_address)
+		input_address += BIT_ULL(47);
+
+	if (output_address)
+		output_address += BIT_ULL(47);
 	return tdcall_hyperv(control, input_address, output_address);
 #if 0
 

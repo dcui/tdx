@@ -77,7 +77,7 @@ int vmbus_negotiate_version(struct vmbus_channel_msginfo *msginfo, u32 version)
 	struct vmbus_channel_initiate_contact *msg;
 	unsigned long flags;
 
-	printk("cdx: %s, line %d, trying ver = %d\n", __func__, __LINE__, version);
+	printk("cdx: %s, line %d, trying ver = %x\n", __func__, __LINE__, version);
 	init_completion(&msginfo->waitevent);
 
 	msg = (struct vmbus_channel_initiate_contact *)msginfo->msg;
@@ -86,7 +86,7 @@ int vmbus_negotiate_version(struct vmbus_channel_msginfo *msginfo, u32 version)
 	msg->header.msgtype = CHANNELMSG_INITIATE_CONTACT;
 	msg->vmbus_version_requested = version;
 
-	printk("cdx: %s, line %d, trying ver = %d\n", __func__, __LINE__, version);
+	printk("cdx: %s, line %d, trying ver = %x\n", __func__, __LINE__, version);
 	/*
 	 * VMBus protocol 5.0 (VERSION_WIN10_V5) and higher require that we must
 	 * use VMBUS_MESSAGE_CONNECTION_ID_4 for the Initiate Contact Message,
@@ -99,18 +99,19 @@ int vmbus_negotiate_version(struct vmbus_channel_msginfo *msginfo, u32 version)
 	 * On old hosts, we should always use VMBUS_MESSAGE_CONNECTION_ID (1).
 	 */
 	if (version >= VERSION_WIN10_V5) {
-		printk("cdx: %s, line %d, trying ver = %d\n", __func__, __LINE__, version);
+		printk("cdx: %s, line %d, trying ver = %x\n", __func__, __LINE__, version);
 		msg->msg_sint = VMBUS_MESSAGE_SINT;
 		vmbus_connection.msg_conn_id = VMBUS_MESSAGE_CONNECTION_ID_4;
 	} else {
-		printk("cdx: %s, line %d, trying ver = %d\n", __func__, __LINE__, version);
+		printk("cdx: %s, line %d, trying ver = %x\n", __func__, __LINE__, version);
 		msg->interrupt_page = virt_to_phys(vmbus_connection.int_page);
 		vmbus_connection.msg_conn_id = VMBUS_MESSAGE_CONNECTION_ID;
 	}
 
-	printk("cdx: %s, line %d, trying ver = %d\n", __func__, __LINE__, version);
 	msg->monitor_page1 = vmbus_connection.monitor_pages_pa[0];
 	msg->monitor_page2 = vmbus_connection.monitor_pages_pa[1];
+	printk("cdx: %s, line %d, trying ver = %x, pa1=%llx, pa2=%llx\n", __func__, __LINE__, version,
+			msg->monitor_page1, msg->monitor_page2);
 
 	msg->target_vcpu = hv_cpu_number_to_vp_number(VMBUS_CONNECT_CPU);
 
@@ -124,12 +125,12 @@ int vmbus_negotiate_version(struct vmbus_channel_msginfo *msginfo, u32 version)
 
 	spin_unlock_irqrestore(&vmbus_connection.channelmsg_lock, flags);
 
-	printk("cdx: %s, line %d, trying ver = %d\n", __func__, __LINE__, version);
+	printk("cdx: %s, line %d, trying ver = %x\n", __func__, __LINE__, version);
 	ret = vmbus_post_msg(msg,
 			     sizeof(struct vmbus_channel_initiate_contact),
 			     true);
 
-	printk("cdx: %s, line %d, trying ver = %d, ret=%d\n", __func__, __LINE__, version, ret);
+	printk("cdx: %s, line %d, trying ver = %x, ret=%d\n", __func__, __LINE__, version, ret);
 	trace_vmbus_negotiate_version(msg, ret);
 
 	if (ret != 0) {
@@ -141,9 +142,9 @@ int vmbus_negotiate_version(struct vmbus_channel_msginfo *msginfo, u32 version)
 	}
 
 	/* Wait for the connection response */
-	printk("cdx: %s, line %d, trying ver = %d\n", __func__, __LINE__, version);
+	printk("cdx: %s, line %d, trying ver = %x\n", __func__, __LINE__, version);
 	wait_for_completion(&msginfo->waitevent);
-	printk("cdx: %s, line %d, trying ver = %d\n", __func__, __LINE__, version);
+	printk("cdx: %s, line %d, trying ver = %x\n", __func__, __LINE__, version);
 
 	spin_lock_irqsave(&vmbus_connection.channelmsg_lock, flags);
 	list_del(&msginfo->msglistentry);
@@ -151,18 +152,18 @@ int vmbus_negotiate_version(struct vmbus_channel_msginfo *msginfo, u32 version)
 
 	/* Check if successful */
 	if (msginfo->response.version_response.version_supported) {
-		printk("cdx: %s, line %d, trying ver = %d\n", __func__, __LINE__, version);
+		printk("cdx: %s, line %d, trying ver = %x\n", __func__, __LINE__, version);
 		vmbus_connection.conn_state = CONNECTED;
 
 		if (version >= VERSION_WIN10_V5)
 			vmbus_connection.msg_conn_id =
 				msginfo->response.version_response.msg_conn_id;
 	} else {
-		printk("cdx: %s, line %d, trying ver = %d\n", __func__, __LINE__, version);
+		printk("cdx: %s, line %d, trying ver = %x\n", __func__, __LINE__, version);
 		return -ECONNREFUSED;
 	}
 
-	printk("cdx: %s, line %d, trying ver = %d, ret=%d\n", __func__, __LINE__, version, ret);
+	printk("cdx: %s, line %d, trying ver = %x, ret=%d\n", __func__, __LINE__, version, ret);
 	return ret;
 }
 
@@ -244,9 +245,9 @@ int vmbus_connect(void)
 	vmbus_connection.monitor_pages_original[1]
 		= vmbus_connection.monitor_pages[1];
 	vmbus_connection.monitor_pages_pa[0]
-		= virt_to_phys(vmbus_connection.monitor_pages[0]);
+		= virt_to_phys(vmbus_connection.monitor_pages[0]) + BIT_ULL(47); //cdx
 	vmbus_connection.monitor_pages_pa[1]
-		= virt_to_phys(vmbus_connection.monitor_pages[1]);
+		= virt_to_phys(vmbus_connection.monitor_pages[1]) + BIT_ULL(47); //cdx
 
 	if (hv_is_isolation_supported()) {
 		ret = set_memory_decrypted((unsigned long)
@@ -300,8 +301,9 @@ int vmbus_connect(void)
 		 * Set memory host visibility hvcall smears memory
 		 * and so zero monitor pages here.
 		 */
-		printk("cdx: %s, line %d: %px, %px\n", __func__, __LINE__, vmbus_connection.monitor_pages[0],
-			vmbus_connection.monitor_pages[1]);
+		printk("cdx: %s, line %d: %px, %px, monitor: pa1=%llx, pa2=%llx\n", __func__, __LINE__, vmbus_connection.monitor_pages[0],
+			vmbus_connection.monitor_pages[1],
+			vmbus_connection.monitor_pages_pa[0], vmbus_connection.monitor_pages_pa[1]);
 		//mdelay(10000);
 		{
 			extern  volatile int ve_print;;

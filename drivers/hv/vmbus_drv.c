@@ -33,6 +33,7 @@
 #include <linux/efi.h>
 #include <linux/random.h>
 #include <linux/kernel.h>
+#include <linux/delay.h>
 #include <linux/syscore_ops.h>
 #include <linux/dma-map-ops.h>
 #include <clocksource/hyperv_timer.h>
@@ -1332,8 +1333,9 @@ static void vmbus_isr(void)
 		= this_cpu_ptr(hv_context.cpu_context);
 	void *page_addr;
 	struct hv_message *msg;
+	static bool first_time = true;
 
-	printk("cdx: %s, line %d\n", __func__, __LINE__);
+	printk("cdx: %s, line %d\n", __func__, __LINE__); if (first_time) {first_time = false; mdelay(10000); }
 	vmbus_chan_sched(hv_cpu);
 	printk("cdx: %s, line %d\n", __func__, __LINE__);
 
