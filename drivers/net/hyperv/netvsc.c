@@ -394,10 +394,10 @@ static int netvsc_init_buf(struct hv_device *device,
 		net_device->recv_original_buf = net_device->recv_buf;
 		net_device->recv_buf = vaddr;
 	} else { //tdx
-		printk("cdx: %s, line %d: new netvsc cccccccccccccccccccccccccccccc :-)\n", __func__, __LINE__); mdelay(3000);
-                set_memory_decrypted((long)net_device->recv_buf, buf_size / HV_HYP_PAGE_SIZE);
+		//printk("cdx: %s, line %d: new netvsc cccccccccccccccccccccccccccccc :-)\n", __func__, __LINE__); mdelay(3000);
+                //set_memory_decrypted((long)net_device->recv_buf, buf_size / HV_HYP_PAGE_SIZE);
 
-		printk("cdx: %s, line %d\n", __func__, __LINE__);
+		printk("cdx: %s, line %d: jjjjjjjjjj 01:01\n", __func__, __LINE__);
                 for (i = 0; i < buf_size / HV_HYP_PAGE_SIZE; i++)
 			set_memory_decrypted_gpa(slow_virt_to_phys(net_device->recv_buf + i * HV_HYP_PAGE_SIZE), 1);
 
@@ -520,8 +520,8 @@ static int netvsc_init_buf(struct hv_device *device,
 		net_device->send_original_buf = net_device->send_buf;
 		net_device->send_buf = vaddr;
 	} else { //tdx
-		printk("cdx: %s, line %d\n", __func__, __LINE__);
-                set_memory_decrypted((long)net_device->send_buf, buf_size / HV_HYP_PAGE_SIZE); mdelay(3000);
+		printk("cdx: %s, line %d: jjjjjjjjjj 01:01\n", __func__, __LINE__);
+                //set_memory_decrypted((long)net_device->send_buf, buf_size / HV_HYP_PAGE_SIZE); mdelay(3000);
 
 		printk("cdx: %s, line %d\n", __func__, __LINE__);
                 for (i = 0; i < buf_size / HV_HYP_PAGE_SIZE; i++)

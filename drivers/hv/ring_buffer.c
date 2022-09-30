@@ -242,8 +242,8 @@ int hv_ringbuffer_init(struct hv_ring_buffer_info *ring_info,
 				pgprot_decrypted(PAGE_KERNEL_NOENC));
 				//PAGE_KERNEL);
 
-		printk("cdx: %s, line %d\n", __func__, __LINE__); //mdelay(3000);
-		set_memory_decrypted((unsigned long)ring_info->ring_buffer, (page_cnt * 2 - 1)); //mdelay(1000);
+		//printk("cdx: %s, line %d\n", __func__, __LINE__); //mdelay(3000);
+		//set_memory_decrypted((unsigned long)ring_info->ring_buffer, (page_cnt * 2 - 1)); //mdelay(1000);
 
 		//printk("cdx: %s, line %d\n", __func__, __LINE__); //mdelay(3000);
 		//set_memory_decrypted_gpa(page_to_phys(pages), page_cnt);
@@ -289,7 +289,7 @@ int hv_ringbuffer_init(struct hv_ring_buffer_info *ring_info,
 /* Cleanup the ring buffer. */
 void hv_ringbuffer_cleanup(struct hv_ring_buffer_info *ring_info)
 {
-	u32 page_cnt = ring_info->ring_size >> PAGE_SHIFT;
+	//u32 page_cnt = ring_info->ring_size >> PAGE_SHIFT;
 
 	mutex_lock(&ring_info->ring_buffer_mutex);
 
@@ -297,7 +297,7 @@ void hv_ringbuffer_cleanup(struct hv_ring_buffer_info *ring_info)
 	//set_memory_encrypted_gpa(page_to_phys(ring_info->pages), page_cnt);
 
 	printk("cdx: %s, line %d\n", __func__, __LINE__); //mdelay(3000);
-	set_memory_encrypted((unsigned long)ring_info->ring_buffer, (page_cnt * 2 - 1)); //mdelay(1000);
+	//set_memory_encrypted((unsigned long)ring_info->ring_buffer, (page_cnt * 2 - 1)); //mdelay(1000);
 
 	printk("cdx: %s, line %d\n", __func__, __LINE__); //mdelay(3000);
 	vunmap(ring_info->ring_buffer);
