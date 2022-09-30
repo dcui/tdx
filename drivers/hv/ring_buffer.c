@@ -199,6 +199,7 @@ int hv_ringbuffer_init(struct hv_ring_buffer_info *ring_info,
 	 */
 	printk("cdx: %s, line %d\n", __func__, __LINE__);
 	if (hv_isolation_type_snp()) { //cdx
+		BUG_ON(1);
 		printk("cdx: %s, line %d\n", __func__, __LINE__);
 		pfn = page_to_pfn(pages) +
 			PFN_DOWN(ms_hyperv.shared_gpa_boundary);
@@ -223,7 +224,7 @@ int hv_ringbuffer_init(struct hv_ring_buffer_info *ring_info,
 		/* Zero ring buffer after setting memory host visibility. */
 		memset(ring_info->ring_buffer, 0x00, PAGE_SIZE * page_cnt);
 	} else {
-		printk("cdx: %s, line %d\n", __func__, __LINE__);
+		printk("cdx: %s, line %d ============= Michael: new code\n", __func__, __LINE__);
 		pages_wraparound = kcalloc(page_cnt * 2 - 1,
 					   sizeof(struct page *),
 					   GFP_KERNEL);
@@ -238,14 +239,15 @@ int hv_ringbuffer_init(struct hv_ring_buffer_info *ring_info,
 		printk("cdx: %s, line %d\n", __func__, __LINE__); //mdelay(3000);
 		ring_info->ring_buffer = (struct hv_ring_buffer *)
 			vmap(pages_wraparound, page_cnt * 2 - 1, VM_MAP,
-				PAGE_KERNEL);
+				pgprot_decrypted(PAGE_KERNEL_NOENC));
+				//PAGE_KERNEL);
 
 		printk("cdx: %s, line %d\n", __func__, __LINE__); //mdelay(3000);
 		set_memory_decrypted((unsigned long)ring_info->ring_buffer, (page_cnt * 2 - 1)); //mdelay(1000);
 
-		printk("cdx: %s, line %d\n", __func__, __LINE__); //mdelay(3000);
-		set_memory_decrypted_gpa(page_to_phys(pages), page_cnt);
-		ring_info->pages = pages;
+		//printk("cdx: %s, line %d\n", __func__, __LINE__); //mdelay(3000);
+		//set_memory_decrypted_gpa(page_to_phys(pages), page_cnt);
+		//ring_info->pages = pages;
 		//tdg_map_gpa(page_to_pfn(pages) << PAGE_SHIFT, page_cnt, TDX_MAP_SHARED);
 
 		printk("cdx: %s, line %d\n", __func__, __LINE__); //mdelay(3000);
@@ -291,8 +293,8 @@ void hv_ringbuffer_cleanup(struct hv_ring_buffer_info *ring_info)
 
 	mutex_lock(&ring_info->ring_buffer_mutex);
 
-	printk("cdx: %s, line %d\n", __func__, __LINE__); //mdelay(3000);
-	set_memory_encrypted_gpa(page_to_phys(ring_info->pages), page_cnt);
+	//printk("cdx: %s, line %d\n", __func__, __LINE__); //mdelay(3000);
+	//set_memory_encrypted_gpa(page_to_phys(ring_info->pages), page_cnt);
 
 	printk("cdx: %s, line %d\n", __func__, __LINE__); //mdelay(3000);
 	set_memory_encrypted((unsigned long)ring_info->ring_buffer, (page_cnt * 2 - 1)); //mdelay(1000);

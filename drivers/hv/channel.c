@@ -482,7 +482,7 @@ static int __vmbus_establish_gpadl(struct vmbus_channel *channel,
 	if (ret)
 		return ret;
 
-#if 0
+#if 1
 	ret = set_memory_decrypted((unsigned long)kbuffer,
 				   PFN_UP(size));
 	if (ret) {
@@ -572,7 +572,7 @@ cleanup:
 
 	kfree(msginfo);
 
-#if 0
+#if 1
 	if (ret)
 		set_memory_encrypted((unsigned long)kbuffer,
 				     PFN_UP(size));
@@ -895,7 +895,7 @@ post_msg_err:
 
 	kfree(info);
 
-#if 0
+#if 1
 	ret = set_memory_encrypted((unsigned long)gpadl->buffer,
 				   PFN_UP(gpadl->size));
 	if (ret)

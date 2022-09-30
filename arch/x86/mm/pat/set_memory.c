@@ -2063,8 +2063,10 @@ static int __set_memory_enc_pgtable(unsigned long addr, int numpages, bool enc)
 
 	/* Notify hypervisor that we have successfully set/clr encryption attribute. */
 	if (!ret) {
-		if (is_vmalloc_addr((void *)addr))
+		if (is_vmalloc_addr((void *)addr)) {
+			WARN_ON(1);
 			goto out;
+		}
 
 		if (!x86_platform.guest.enc_status_change_finish(addr, numpages, enc))
 			ret = -EIO;
