@@ -45,24 +45,29 @@ static u64 tdcall_hyperv(u64 control, u64 input_addr, u64 output_addr)
 {
 	unsigned long flags;
         u64 rax;
+	//static bool first = true;
 
-	printk("cdx: %s, line %d: control=%llx, input=%llx, output=%llx, calling in 30s\n", __func__, __LINE__, control, input_addr, output_addr);
-	mdelay(20000);
+	//printk("cdx: %s, line %d: control=%llx, input=%llx, output=%llx, calling in 30s\n", __func__, __LINE__, control, input_addr, output_addr);
+#if 0
+	if (first) {
+		first = false;
+		mdelay(30000);
+	}
+#endif
 	local_irq_save(flags);
 
 	//https://access.redhat.com/articles/1406253
 	//                       %rdi,       %rsi,        %rdx
         rax = __tdcall_hyperv(control, output_addr, input_addr);
-	mdelay(10000);
-	printk("cdx: %s, line %d: control=%llx, input=%llx, output=%llx: called=%llx. delaying 30s\n", __func__, __LINE__, control, input_addr, output_addr, rax);
-	mdelay(10000);
+	//mdelay(10000);
+	//printk("cdx: %s, line %d: control=%llx, input=%llx, output=%llx: called=%llx. delaying 30s\n", __func__, __LINE__, control, input_addr, output_addr, rax);
+	//mdelay(10000);
 
 	local_irq_restore(flags);
 
-	printk("cdx: %s, line %d: control=%llx, input=%llx, output=%llx: called=%llx. delaying 30s\n", __func__, __LINE__, control, input_addr, output_addr, rax);
-	mdelay(10000);
-
-        WARN_ON(rax);
+	//WARN_ONCE(rax, "cdx: %s, line %d: control=%llx, input=%llx, output=%llx: called=%llx\n", __func__, __LINE__, control, input_addr, output_addr, rax);
+	//printk_ratelimited("cdx: %s, line %d: control=%llx, input=%llx, output=%llx: called=%llx\n", __func__, __LINE__, control, input_addr, output_addr, rax);
+	//mdelay(10000);
 
         return rax;
 }
@@ -78,7 +83,7 @@ static inline u64 hv_do_hypercall(u64 control, void *input, void *output)
 	//	return U64_MAX;
 
 	//printk_ratelimited("cdx: %s, line %d\n", __func__, __LINE__);
-	printk("cdx: %s, line %d\n", __func__, __LINE__);
+	//printk("cdx: %s, line %d\n", __func__, __LINE__);
 	if (input_address)
 		input_address += BIT_ULL(47);
 
@@ -123,9 +128,9 @@ static inline u64 hv_do_fast_hypercall8(u16 code, u64 input1)
 {
 	u64 hv_status, control = (u64)code | HV_HYPERCALL_FAST_BIT;
 
-	WARN(1, "cdx: %s, line %d\n", __func__, __LINE__);
+	//WARN_ONCE(1, "cdx: %s, line %d\n", __func__, __LINE__);
 	//printk_ratelimited("cdx: %s, line %d\n", __func__, __LINE__);
-	printk("cdx: %s, line %d\n", __func__, __LINE__);
+	//printk("cdx: %s, line %d\n", __func__, __LINE__);
 #ifdef CONFIG_X86_64
 	return tdcall_hyperv(control, input1, 0);
 #if 0
@@ -163,7 +168,7 @@ static inline u64 hv_do_fast_hypercall16(u16 code, u64 input1, u64 input2)
 {
 	u64  hv_status, control = (u64)code | HV_HYPERCALL_FAST_BIT;
 
-	WARN(1, "cdx: %s, line %d\n", __func__, __LINE__);
+	WARN_ONCE(1, "cdx: %s, line %d\n", __func__, __LINE__);
 	//printk_ratelimited("cdx: %s, line %d\n", __func__, __LINE__);
 	printk("cdx: %s, line %d\n", __func__, __LINE__);
 #ifdef CONFIG_X86_64

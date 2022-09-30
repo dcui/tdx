@@ -155,9 +155,13 @@ int vmbus_negotiate_version(struct vmbus_channel_msginfo *msginfo, u32 version)
 		printk("cdx: %s, line %d, trying ver = %x\n", __func__, __LINE__, version);
 		vmbus_connection.conn_state = CONNECTED;
 
-		if (version >= VERSION_WIN10_V5)
+		if (version >= VERSION_WIN10_V5) {
 			vmbus_connection.msg_conn_id =
 				msginfo->response.version_response.msg_conn_id;
+			printk("cdx: vmbus_connection.msg_conn_id: cuiyicheng = 0x%x, connection_state=%d\n",
+				 vmbus_connection.msg_conn_id, msginfo->response.version_response.connection_state);
+			//mdelay(10000);
+		}
 	} else {
 		printk("cdx: %s, line %d, trying ver = %x\n", __func__, __LINE__, version);
 		return -ECONNREFUSED;
@@ -521,6 +525,7 @@ int vmbus_post_msg(void *buffer, size_t buflen, bool can_sleep)
 
 	conn_id.asu32 = 0;
 	conn_id.u.id = vmbus_connection.msg_conn_id;
+	//printk_ratelimited("cdx: vmbus_post_msg: msg_conn_id: cuiyicheng = 0x%x\n", conn_id.u.id);
 
 	/*
 	 * hv_post_message() can have transient failures because of

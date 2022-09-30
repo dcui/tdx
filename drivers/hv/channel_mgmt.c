@@ -502,6 +502,7 @@ static void vmbus_add_channel_work(struct work_struct *work)
 	 * so that when we do close the channel normally, we
 	 * can cleanup properly.
 	 */
+	printk_ratelimited("cdx: %s, line %d\n", __func__, __LINE__);
 	newchannel->state = CHANNEL_OPEN_STATE;
 
 	if (primary_channel != NULL) {
@@ -528,6 +529,8 @@ static void vmbus_add_channel_work(struct work_struct *work)
 	if (!newchannel->device_obj)
 		goto err_deq_chan;
 
+	printk_ratelimited("cdx: %s, line %d: %pUl, %pUl\n", __func__, __LINE__,
+			&newchannel->offermsg.offer.if_type, &newchannel->offermsg.offer.if_instance);
 	newchannel->device_obj->device_id = newchannel->device_id;
 	/*
 	 * Add the new device to the bus. This will kick off device-driver
@@ -535,6 +538,7 @@ static void vmbus_add_channel_work(struct work_struct *work)
 	 * method.
 	 */
 	ret = vmbus_device_register(newchannel->device_obj);
+	printk_ratelimited("cdx: %s, line %d: reg_dev: ret=%d\n", __func__, __LINE__, ret);
 
 	if (ret != 0) {
 		pr_err("unable to add child device object (relid %d)\n",
@@ -580,6 +584,7 @@ static void vmbus_process_offer(struct vmbus_channel *newchannel)
 	struct workqueue_struct *wq;
 	bool fnew = true;
 
+	printk_ratelimited("cdx: %s, line %d\n", __func__, __LINE__);
 	/*
 	 * Synchronize vmbus_process_offer() and CPU hotplugging:
 	 *
@@ -1007,6 +1012,7 @@ static void vmbus_onoffer(struct vmbus_channel_message_header *hdr)
 
 	offer = (struct vmbus_channel_offer_channel *)hdr;
 
+	printk_ratelimited("cdx: %s, line %d\n", __func__, __LINE__);
 	trace_vmbus_onoffer(offer);
 
 	if (!vmbus_is_valid_offer(offer)) {
@@ -1048,6 +1054,7 @@ static void vmbus_onoffer(struct vmbus_channel_message_header *hdr)
 		 * suspend are re-offered upon the resume.  See the WARN_ON()
 		 * in hv_process_channel_removal().
 		 */
+		printk_ratelimited("cdx: %s, line %d\n", __func__, __LINE__);
 		mutex_lock(&vmbus_connection.channel_mutex);
 
 		atomic_dec(&vmbus_connection.offer_in_progress);
@@ -1559,6 +1566,8 @@ int vmbus_request_offers(void)
 	struct vmbus_channel_msginfo *msginfo;
 	int ret;
 
+	printk("cdx: %s, line %d\n", __func__, __LINE__);
+
 	msginfo = kzalloc(sizeof(*msginfo) +
 			  sizeof(struct vmbus_channel_message_header),
 			  GFP_KERNEL);
@@ -1572,6 +1581,7 @@ int vmbus_request_offers(void)
 	ret = vmbus_post_msg(msg, sizeof(struct vmbus_channel_message_header),
 			     true);
 
+	printk("cdx: %s, line %d: ret=%d\n", __func__, __LINE__, ret); //mdelay(5000);
 	trace_vmbus_request_offers(ret);
 
 	if (ret != 0) {

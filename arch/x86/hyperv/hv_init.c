@@ -633,7 +633,7 @@ void hyperv_report_panic(struct pt_regs *regs, long err, bool in_die)
 	 * registers to report, but if we miss it (e.g. on BUG()) we need
 	 * to report it on 'panic'.
 	 */
-	if (panic_reported)
+	if (0 && panic_reported)
 		return;
 	panic_reported = true;
 
@@ -648,7 +648,7 @@ void hyperv_report_panic(struct pt_regs *regs, long err, bool in_die)
 	/*
 	 * Let Hyper-V know there is crash data available
 	 */
-	wrmsrl(HV_X64_MSR_CRASH_CTL, HV_CRASH_CTL_CRASH_NOTIFY);
+	wrmsrl(HV_X64_MSR_CRASH_CTL, HV_CRASH_CTL_CRASH_NOTIFY); //cdx
 }
 EXPORT_SYMBOL_GPL(hyperv_report_panic);
 

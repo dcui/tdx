@@ -384,6 +384,7 @@ static int netvsc_init_buf(struct hv_device *device,
 	}
 
 	if (hv_isolation_type_snp()) {
+		BUG_ON(1);
 		vaddr = hv_map_memory(net_device->recv_buf, buf_size);
 		if (!vaddr) {
 			ret = -ENOMEM;
@@ -392,6 +393,18 @@ static int netvsc_init_buf(struct hv_device *device,
 
 		net_device->recv_original_buf = net_device->recv_buf;
 		net_device->recv_buf = vaddr;
+	} else { //tdx
+		printk("cdx: %s, line %d\n", __func__, __LINE__);
+                set_memory_decrypted((long)net_device->recv_buf, buf_size / HV_HYP_PAGE_SIZE);
+
+		printk("cdx: %s, line %d\n", __func__, __LINE__);
+                for (i = 0; i < buf_size / HV_HYP_PAGE_SIZE; i++)
+			set_memory_decrypted_gpa(slow_virt_to_phys(net_device->recv_buf + i * HV_HYP_PAGE_SIZE), 1);
+
+		printk("cdx: %s, line %d\n", __func__, __LINE__);
+                memset((void *)net_device->recv_buf, 0x00, buf_size);
+
+		printk("cdx: %s, line %d\n", __func__, __LINE__);
 	}
 
 	/* Notify the NetVsp of the gpadl handle */
@@ -506,6 +519,18 @@ static int netvsc_init_buf(struct hv_device *device,
 
 		net_device->send_original_buf = net_device->send_buf;
 		net_device->send_buf = vaddr;
+	} else { //tdx
+		printk("cdx: %s, line %d\n", __func__, __LINE__);
+                set_memory_decrypted((long)net_device->send_buf, buf_size / HV_HYP_PAGE_SIZE);
+
+		printk("cdx: %s, line %d\n", __func__, __LINE__);
+                for (i = 0; i < buf_size / HV_HYP_PAGE_SIZE; i++)
+			set_memory_decrypted_gpa(slow_virt_to_phys(net_device->send_buf + i * HV_HYP_PAGE_SIZE), 1);
+
+		printk("cdx: %s, line %d\n", __func__, __LINE__);
+                memset((void *)net_device->send_buf, 0x00, buf_size);
+
+		printk("cdx: %s, line %d\n", __func__, __LINE__);
 	}
 
 	/* Notify the NetVsp of the gpadl handle */

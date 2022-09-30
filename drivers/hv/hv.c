@@ -126,6 +126,7 @@ int hv_synic_alloc(void)
 	 * detect what memory has been allocated and cleanup properly
 	 * after any failures.
 	 */
+	printk_ratelimited("cdx: %s, line %d\n", __func__, __LINE__);
 	for_each_present_cpu(cpu) {
 		hv_cpu = per_cpu_ptr(hv_context.cpu_context, cpu);
 		memset(hv_cpu, 0, sizeof(*hv_cpu));

@@ -64,9 +64,11 @@ static inline u64 _tdx_hypercall_return_r11(u64 fn, u64 r12, u64 r13, u64 r14, u
 		.r14 = r14,
 		.r15 = r15,
 	};
+	u64 ret;
 
+	ret = __tdx_hypercall(&args, TDX_HCALL_HAS_OUTPUT);
 	*r11 = args.r11;
-	return __tdx_hypercall(&args, 0);
+	return ret;
 }
 
 /* Called from __tdx_hypercall() for unrecoverable failure */
@@ -255,8 +257,10 @@ static int read_msr(struct pt_regs *regs, struct ve_info *ve)
 	 * can be found in TDX Guest-Host-Communication Interface
 	 * (GHCI), section titled "TDG.VP.VMCALL<Instruction.RDMSR>".
 	 */
+	//printk_ratelimited("cdx: read_msr: 1: reg=0x%lx\n", regs->cx);
 	if (__tdx_hypercall(&args, TDX_HCALL_HAS_OUTPUT))
 		return -EIO;
+	//printk_ratelimited("cdx: read_msr: 2: reg=0x%lx\n", regs->cx);
 
 	regs->ax = lower_32_bits(args.r11);
 	regs->dx = upper_32_bits(args.r11);
@@ -272,6 +276,7 @@ static int write_msr(struct pt_regs *regs, struct ve_info *ve)
 		.r13 = (u64)regs->dx << 32 | regs->ax,
 	};
 
+	//printk_ratelimited("cdx: write_msr: 1: reg=0x%lx\n", regs->cx);
 	/*
 	 * Emulate the MSR write via hypercall. More info about ABI
 	 * can be found in TDX Guest-Host-Communication Interface
@@ -279,6 +284,7 @@ static int write_msr(struct pt_regs *regs, struct ve_info *ve)
 	 */
 	if (__tdx_hypercall(&args, 0))
 		return -EIO;
+	//printk_ratelimited("cdx: write_msr: 2: reg=0x%lx\n", regs->cx);
 
 	return ve_instr_len(ve);
 }
@@ -765,9 +771,9 @@ static bool tdx_enc_status_changed(unsigned long vaddr, int numpages, bool enc)
 	phys_addr_t start = __pa(vaddr);
 	phys_addr_t end   = __pa(vaddr + numpages * PAGE_SIZE);
 	u64 ret;
-	u64 r11;
+	u64 r11 = 0;
 
-	printk("cdx: tdx_enc_status_changed: 1: enc=%d, va=%lx, nr_pg=%d, gpa=0x%llx\n", enc, vaddr, numpages, start);
+	//printk("cdx: tdx_enc_status_changed: 1: enc=%d, va=%lx, nr_pg=%d, gpa=0x%llx\n", enc, vaddr, numpages, start);
 	if (!enc) {
 		/* Set the shared (decrypted) bits: */
 		start |= cc_mkdec(0);
@@ -780,19 +786,20 @@ static bool tdx_enc_status_changed(unsigned long vaddr, int numpages, bool enc)
 	 * section "TDG.VP.VMCALL<MapGPA>"
 	 */
 	//if (_tdx_hypercall(TDVMCALL_MAP_GPA, start, end - start, 0, 0))
-	printk("cdx: tdx_enc_status_changed: 2: enc=%d, va=%lx, nr_pg=%d, gpa=%llx\n", enc, vaddr, numpages, start);
+	//printk("cdx: tdx_enc_status_changed: 2: enc=%d, va=%lx, nr_pg=%d, gpa=0x%llx\n", enc, vaddr, numpages, start);
 again:
 	ret = _tdx_hypercall_return_r11(TDVMCALL_MAP_GPA, start, end - start, 0, 0, &r11);
-	printk("cdx: tdx_enc_status_changed: 3: enc=%d, bytes=0x%llx, gpa=0x%llx, ret=0x%llx\n", enc, end - start, start, ret);
+	//printk("cdx: tdx_enc_status_changed: 3: enc=%d, bytes=0x%llx, gpa=0x%llx, ret=0x%llx\n", enc, end - start, start, ret);
 	if (ret == TDX_VMCALL_STATUS_RETRY) {
 		start = r11;
-		printk("cdx: tdx_enc_status_changed: 4.1: retry: enc=%d, gpa: start=0x%llx, end=0x%llx\n", enc, start, end);
+		//printk("cdx: tdx_enc_status_changed: 4.1: retry: enc=%d, gpa: start=0x%llx, end=0x%llx\n", enc, start, end);
 		if (!enc)
 			start |= cc_mkdec(0);
-		printk("cdx: tdx_enc_status_changed: 4.2: retry: enc=%d, gpa: start=0x%llx, end=0x%llx, bytes=0x%llx\n", enc, start, end, end-start);
+		//printk("cdx: tdx_enc_status_changed: 4.2: retry: enc=%d, gpa: start=0x%llx, end=0x%llx, bytes=0x%llx\n", enc, start, end, end-start);
 		goto again;
 	}
 
+	//printk("cdx: tdx_enc_status_changed: 5: enc=%d, bytes=0x%llx, gpa=0x%llx, ret=0x%llx\n", enc, end - start, start, ret);
 	if (ret)
 		return false;
 
@@ -823,7 +830,75 @@ again:
 			return false;
 	}
 
-	printk("cdx: tdx_enc_status_changed: 3: enc=%d, va=%lx, nr_pg=%d, gpa=%llx\n", enc, vaddr, numpages, start);
+	//printk("cdx: tdx_enc_status_changed: 9: enc=%d, va=%lx, nr_pg=%d, gpa=%llx\n", enc, vaddr, numpages, start);
+	return true;
+}
+
+bool tdx_enc_status_changed_gpa(u64 gpa, int numpages, bool enc)
+{
+	phys_addr_t start = gpa;
+	phys_addr_t end   = gpa + numpages * PAGE_SIZE;
+	u64 ret;
+	u64 r11 = 0;
+
+	//printk("cdx: tdx_enc_status_changed_gpa: 1: enc=%d, nr_pg=%d, gpa=0x%llx\n", enc, numpages, start);
+	if (!enc) {
+		/* Set the shared (decrypted) bits: */
+		start |= cc_mkdec(0);
+		end   |= cc_mkdec(0);
+	}
+
+	/*
+	 * Notify the VMM about page mapping conversion. More info about ABI
+	 * can be found in TDX Guest-Host-Communication Interface (GHCI),
+	 * section "TDG.VP.VMCALL<MapGPA>"
+	 */
+	//if (_tdx_hypercall(TDVMCALL_MAP_GPA, start, end - start, 0, 0))
+	//printk("cdx: tdx_enc_status_changed_gpa: 2: enc=%d, nr_pg=%d, gpa=0x%llx\n", enc, numpages, start);
+again:
+	ret = _tdx_hypercall_return_r11(TDVMCALL_MAP_GPA, start, end - start, 0, 0, &r11);
+	//printk("cdx: tdx_enc_status_changed_gpa: 3: enc=%d, bytes=0x%llx, gpa=0x%llx, ret=0x%llx\n", enc, end - start, start, ret);
+	if (ret == TDX_VMCALL_STATUS_RETRY) {
+		start = r11;
+		//printk("cdx: tdx_enc_status_changed_gpa: 4.1: retry: enc=%d, gpa: start=0x%llx, end=0x%llx\n", enc, start, end);
+		if (!enc)
+			start |= cc_mkdec(0);
+		//printk("cdx: tdx_enc_status_changed_gpa: 4.2: retry: enc=%d, gpa: start=0x%llx, end=0x%llx, bytes=0x%llx\n", enc, start, end, end-start);
+		goto again;
+	}
+
+	//printk("cdx: tdx_enc_status_changed_gpa: 5: enc=%d, bytes=0x%llx, gpa=0x%llx, ret=0x%llx\n", enc, end - start, start, ret);
+	if (ret)
+		return false;
+
+	/* private->shared conversion  requires only MapGPA call */
+	if (!enc)
+		return true;
+
+	/*
+	 * For shared->private conversion, accept the page using
+	 * TDX_ACCEPT_PAGE TDX module call.
+	 */
+	while (start < end) {
+		unsigned long len = end - start;
+
+		/*
+		 * Try larger accepts first. It gives chance to VMM to keep
+		 * 1G/2M SEPT entries where possible and speeds up process by
+		 * cutting number of hypercalls (if successful).
+		 */
+
+		if (try_accept_one(&start, len, PG_LEVEL_1G))
+			continue;
+
+		if (try_accept_one(&start, len, PG_LEVEL_2M))
+			continue;
+
+		if (!try_accept_one(&start, len, PG_LEVEL_4K))
+			return false;
+	}
+
+	//printk("cdx: tdx_enc_status_changed_gpa: 9: enc=%d, nr_pg=%d, gpa=%llx\n", enc, numpages, start);
 	return true;
 }
 

@@ -18,6 +18,7 @@
 #include <linux/uio.h>
 #include <linux/interrupt.h>
 #include <linux/set_memory.h>
+#include <linux/printk.h>
 #include <asm/page.h>
 #include <asm/mshyperv.h>
 
@@ -153,6 +154,12 @@ void vmbus_free_ring(struct vmbus_channel *channel)
 	hv_ringbuffer_cleanup(&channel->inbound);
 
 	if (channel->ringbuffer_page) {
+		//cdx
+		//set_memory_encrypted((unsigned long)ring_info->ring_buffer, (page_cnt * 2 - 1)); mdelay(1000);
+
+                ////set_memory_encrypted((unsigned long)page_address(channel->ringbuffer_page),
+                   ///////////                      1 << get_order(channel->ringbuffer_pagecount << PAGE_SHIFT));
+
 		__free_pages(channel->ringbuffer_page,
 			     get_order(channel->ringbuffer_pagecount
 				       << PAGE_SHIFT));
@@ -475,6 +482,7 @@ static int __vmbus_establish_gpadl(struct vmbus_channel *channel,
 	if (ret)
 		return ret;
 
+#if 0
 	ret = set_memory_decrypted((unsigned long)kbuffer,
 				   PFN_UP(size));
 	if (ret) {
@@ -483,6 +491,7 @@ static int __vmbus_establish_gpadl(struct vmbus_channel *channel,
 			 ret);
 		return ret;
 	}
+#endif
 
 	init_completion(&msginfo->waitevent);
 	msginfo->waiting_channel = channel;
@@ -563,10 +572,12 @@ cleanup:
 
 	kfree(msginfo);
 
+#if 0
 	if (ret)
 		set_memory_encrypted((unsigned long)kbuffer,
 				     PFN_UP(size));
 
+#endif
 	return ret;
 }
 
@@ -808,13 +819,16 @@ int vmbus_open(struct vmbus_channel *newchannel,
 {
 	int err;
 
+	printk_ratelimited("cdx: %s, line %d\n", __func__, __LINE__);
 	err = vmbus_alloc_ring(newchannel, send_ringbuffer_size,
 			       recv_ringbuffer_size);
 	if (err)
 		return err;
 
+	printk_ratelimited("cdx: %s, line %d\n", __func__, __LINE__); //mdelay(3000);
 	err = __vmbus_open(newchannel, userdata, userdatalen,
 			   onchannelcallback, context);
+	printk_ratelimited("cdx: %s, line %d, err=%d\n", __func__, __LINE__, err);
 	if (err)
 		vmbus_free_ring(newchannel);
 
@@ -881,10 +895,12 @@ post_msg_err:
 
 	kfree(info);
 
+#if 0
 	ret = set_memory_encrypted((unsigned long)gpadl->buffer,
 				   PFN_UP(gpadl->size));
 	if (ret)
 		pr_warn("Fail to set mem host visibility in GPADL teardown %d.\n", ret);
+#endif
 
 	return ret;
 }

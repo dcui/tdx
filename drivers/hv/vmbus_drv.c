@@ -1080,6 +1080,7 @@ void vmbus_on_msg_dpc(unsigned long data)
 	__u8 payload_size;
 	u32 message_type;
 
+	//printk_ratelimited("cdx: %s, line %d\n", __func__, __LINE__);
 	/*
 	 * 'enum vmbus_channel_message_type' is supposed to always be 'u32' as
 	 * it is being used in 'struct vmbus_channel_message_header' definition
@@ -1102,6 +1103,7 @@ void vmbus_on_msg_dpc(unsigned long data)
 
 	hdr = (struct vmbus_channel_message_header *)msg_copy.u.payload;
 	msgtype = hdr->msgtype;
+	//printk_ratelimited("cdx: %s, line %d: msgtype=%d\n", __func__, __LINE__, msgtype);
 
 	trace_vmbus_on_msg_dpc(hdr);
 
@@ -1261,6 +1263,7 @@ static void vmbus_chan_sched(struct hv_per_cpu_context *hv_cpu)
 	maxbits = HV_EVENT_FLAGS_COUNT;
 	recv_int_page = event->flags;
 
+	//printk_ratelimited("cdx: %s, line %d\n", __func__, __LINE__); 
 	if (unlikely(!recv_int_page))
 		return;
 
@@ -1333,32 +1336,35 @@ static void vmbus_isr(void)
 		= this_cpu_ptr(hv_context.cpu_context);
 	void *page_addr;
 	struct hv_message *msg;
-	static bool first_time = true;
+	//static bool first_time = true;
 
-	printk("cdx: %s, line %d\n", __func__, __LINE__); if (first_time) {first_time = false; mdelay(10000); }
+	//printk_ratelimited("cdx: %s, line %d\n", __func__, __LINE__); if (first_time) {first_time = false; mdelay(10000); }
 	vmbus_chan_sched(hv_cpu);
-	printk("cdx: %s, line %d\n", __func__, __LINE__);
+	//printk("cdx: %s, line %d\n", __func__, __LINE__);
 
 	page_addr = hv_cpu->synic_message_page;
 	msg = (struct hv_message *)page_addr + VMBUS_MESSAGE_SINT;
 
 	/* Check if there are actual msgs to be processed */
 	if (msg->header.message_type != HVMSG_NONE) {
-		printk("cdx: %s, line %d\n", __func__, __LINE__);
+		//printk_ratelimited("cdx: %s, line %d\n", __func__, __LINE__);
+		//printk("cdx: %s, line %d\n", __func__, __LINE__);
 		if (msg->header.message_type == HVMSG_TIMER_EXPIRED) {
-			printk("cdx: %s, line %d\n", __func__, __LINE__);
+			//printk_ratelimited("cdx: %s, line %d: timer(msg based)\n", __func__, __LINE__);
+			//printk("cdx: %s, line %d\n", __func__, __LINE__);
 			hv_stimer0_isr();
-			printk("cdx: %s, line %d\n", __func__, __LINE__);
+			//printk("cdx: %s, line %d\n", __func__, __LINE__);
 			vmbus_signal_eom(msg, HVMSG_TIMER_EXPIRED);
-			printk("cdx: %s, line %d\n", __func__, __LINE__);
+			//printk("cdx: %s, line %d\n", __func__, __LINE__);
 		} else {
-			printk("cdx: %s, line %d\n", __func__, __LINE__);
+			//printk_ratelimited("cdx: %s, line %d: msg\n", __func__, __LINE__);
+			//printk("cdx: %s, line %d\n", __func__, __LINE__);
 			tasklet_schedule(&hv_cpu->msg_dpc);
-			printk("cdx: %s, line %d\n", __func__, __LINE__);
+			//printk("cdx: %s, line %d\n", __func__, __LINE__);
 		}
 	}
 
-	printk("cdx: %s, line %d\n", __func__, __LINE__);
+	//printk("cdx: %s, line %d\n", __func__, __LINE__);
 	add_interrupt_randomness(vmbus_interrupt);
 }
 
@@ -1542,7 +1548,7 @@ static int vmbus_bus_init(void)
 	 */
 	printk("cdx: %s, line %d, ret=%d\n", __func__, __LINE__, ret);
 	if (ms_hyperv.misc_features & HV_FEATURE_GUEST_CRASH_MSR_AVAILABLE) {
-		u64 hyperv_crash_ctl;
+		u64 hyperv_crash_ctl = 0;
 		/*
 		 * Panic message recording (sysctl_record_panic_msg)
 		 * is enabled by default in non-isolated guests and
@@ -1559,8 +1565,8 @@ static int vmbus_bus_init(void)
 		 * Register for panic kmsg callback only if the right
 		 * capability is supported by the hypervisor.
 		 */
-		hyperv_crash_ctl = hv_get_register(HV_REGISTER_CRASH_CTL);
-		if (hyperv_crash_ctl & HV_CRASH_CTL_CRASH_NOTIFY_MSG)
+		//hyperv_crash_ctl = hv_get_register(HV_REGISTER_CRASH_CTL);
+		if (0 & hyperv_crash_ctl & HV_CRASH_CTL_CRASH_NOTIFY_MSG) //cdx
 			hv_kmsg_dump_register();
 
 		register_die_notifier(&hyperv_die_block);

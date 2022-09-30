@@ -185,6 +185,8 @@ struct hv_ring_buffer_info {
 	/* Buffer that holds a copy of an incoming host packet */
 	void *pkt_buffer;
 	u32 pkt_buffer_size;
+
+	struct page *pages;
 };
 
 

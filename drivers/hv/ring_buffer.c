@@ -19,6 +19,7 @@
 #include <linux/prefetch.h>
 #include <linux/io.h>
 #include <asm/mshyperv.h>
+#include <linux/set_memory.h>
 
 #include "hyperv_vmbus.h"
 
@@ -196,7 +197,9 @@ int hv_ringbuffer_init(struct hv_ring_buffer_info *ring_info,
 	 * First page holds struct hv_ring_buffer, do wraparound mapping for
 	 * the rest.
 	 */
-	if (hv_isolation_type_snp()) {
+	printk("cdx: %s, line %d\n", __func__, __LINE__);
+	if (hv_isolation_type_snp()) { //cdx
+		printk("cdx: %s, line %d\n", __func__, __LINE__);
 		pfn = page_to_pfn(pages) +
 			PFN_DOWN(ms_hyperv.shared_gpa_boundary);
 
@@ -210,7 +213,7 @@ int hv_ringbuffer_init(struct hv_ring_buffer_info *ring_info,
 			pfns_wraparound[i + 1] = pfn + i % (page_cnt - 1) + 1;
 
 		ring_info->ring_buffer = (struct hv_ring_buffer *)
-			vmap_pfn(pfns_wraparound, page_cnt * 2 - 1,
+			vmap_pfn(pfns_wraparound, page_cnt * 2 - 1, //cdx
 				 PAGE_KERNEL);
 		kfree(pfns_wraparound);
 
@@ -220,6 +223,7 @@ int hv_ringbuffer_init(struct hv_ring_buffer_info *ring_info,
 		/* Zero ring buffer after setting memory host visibility. */
 		memset(ring_info->ring_buffer, 0x00, PAGE_SIZE * page_cnt);
 	} else {
+		printk("cdx: %s, line %d\n", __func__, __LINE__);
 		pages_wraparound = kcalloc(page_cnt * 2 - 1,
 					   sizeof(struct page *),
 					   GFP_KERNEL);
@@ -231,10 +235,23 @@ int hv_ringbuffer_init(struct hv_ring_buffer_info *ring_info,
 			pages_wraparound[i + 1] =
 				&pages[i % (page_cnt - 1) + 1];
 
+		printk("cdx: %s, line %d\n", __func__, __LINE__); //mdelay(3000);
 		ring_info->ring_buffer = (struct hv_ring_buffer *)
 			vmap(pages_wraparound, page_cnt * 2 - 1, VM_MAP,
 				PAGE_KERNEL);
 
+		printk("cdx: %s, line %d\n", __func__, __LINE__); //mdelay(3000);
+		set_memory_decrypted((unsigned long)ring_info->ring_buffer, (page_cnt * 2 - 1)); //mdelay(1000);
+
+		printk("cdx: %s, line %d\n", __func__, __LINE__); //mdelay(3000);
+		set_memory_decrypted_gpa(page_to_phys(pages), page_cnt);
+		ring_info->pages = pages;
+		//tdg_map_gpa(page_to_pfn(pages) << PAGE_SHIFT, page_cnt, TDX_MAP_SHARED);
+
+		printk("cdx: %s, line %d\n", __func__, __LINE__); //mdelay(3000);
+		memset((void *)ring_info->ring_buffer, 0x00, page_cnt * PAGE_SIZE);
+
+		printk("cdx: %s, line %d\n", __func__, __LINE__); //mdelay(3000);
 		kfree(pages_wraparound);
 		if (!ring_info->ring_buffer)
 			return -ENOMEM;
@@ -270,7 +287,17 @@ int hv_ringbuffer_init(struct hv_ring_buffer_info *ring_info,
 /* Cleanup the ring buffer. */
 void hv_ringbuffer_cleanup(struct hv_ring_buffer_info *ring_info)
 {
+	u32 page_cnt = ring_info->ring_size >> PAGE_SHIFT;
+
 	mutex_lock(&ring_info->ring_buffer_mutex);
+
+	printk("cdx: %s, line %d\n", __func__, __LINE__); //mdelay(3000);
+	set_memory_encrypted_gpa(page_to_phys(ring_info->pages), page_cnt);
+
+	printk("cdx: %s, line %d\n", __func__, __LINE__); //mdelay(3000);
+	set_memory_encrypted((unsigned long)ring_info->ring_buffer, (page_cnt * 2 - 1)); //mdelay(1000);
+
+	printk("cdx: %s, line %d\n", __func__, __LINE__); //mdelay(3000);
 	vunmap(ring_info->ring_buffer);
 	ring_info->ring_buffer = NULL;
 	mutex_unlock(&ring_info->ring_buffer_mutex);

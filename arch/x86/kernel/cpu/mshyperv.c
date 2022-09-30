@@ -356,8 +356,10 @@ static void __init ms_hyperv_init_platform(void)
 		}
 		/* Isolation VMs are unenlightened SEV-based VMs, thus this check: */
 		if (IS_ENABLED(CONFIG_AMD_MEM_ENCRYPT)) {
-			if (hv_get_isolation_type() != HV_ISOLATION_TYPE_NONE)
-				cc_set_vendor(CC_VENDOR_HYPERV);
+			if (hv_get_isolation_type() != HV_ISOLATION_TYPE_NONE) {
+				//cc_set_vendor(CC_VENDOR_HYPERV); //cdx..............
+				cc_set_vendor(CC_VENDOR_INTEL); ////XXXXX
+			}
 			else
 				WARN_ON(1);
 		} else { WARN_ON(1); }
@@ -397,7 +399,7 @@ static void __init ms_hyperv_init_platform(void)
 	machine_ops.shutdown = hv_machine_shutdown;
 	machine_ops.crash_shutdown = hv_machine_crash_shutdown;
 #endif
-	if (ms_hyperv.features & HV_ACCESS_TSC_INVARIANT) {
+	if (ms_hyperv.features & HV_ACCESS_TSC_INVARIANT) { /// not supported... cdx
 		/*
 		 * Writing to synthetic MSR 0x40000118 updates/changes the
 		 * guest visible CPUIDs. Setting bit 0 of this MSR  enables
@@ -477,8 +479,10 @@ static void __init ms_hyperv_init_platform(void)
 	 * clocksource has been initialized. This ensures that the
 	 * stability of the sched_clock is not altered.
 	 */
-	if (!(ms_hyperv.features & HV_ACCESS_TSC_INVARIANT))
+#if 1
+	if (!(ms_hyperv.features & HV_ACCESS_TSC_INVARIANT)) //cdx
 		mark_tsc_unstable("running on Hyper-V");
+#endif
 
 	hardlockup_detector_disable();
 }
