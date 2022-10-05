@@ -257,10 +257,11 @@ static int read_msr(struct pt_regs *regs, struct ve_info *ve)
 	 * can be found in TDX Guest-Host-Communication Interface
 	 * (GHCI), section titled "TDG.VP.VMCALL<Instruction.RDMSR>".
 	 */
-	//printk_ratelimited("cdx: read_msr: 1: reg=0x%lx\n", regs->cx);
-	if (__tdx_hypercall(&args, TDX_HCALL_HAS_OUTPUT))
+	if (__tdx_hypercall(&args, TDX_HCALL_HAS_OUTPUT)) {
+		printk_ratelimited("cdx: read_msr: reg=0x%lx\n", regs->cx);
+		WARN_ON(1);
 		return -EIO;
-	//printk_ratelimited("cdx: read_msr: 2: reg=0x%lx\n", regs->cx);
+	}
 
 	regs->ax = lower_32_bits(args.r11);
 	regs->dx = upper_32_bits(args.r11);
@@ -725,12 +726,17 @@ static bool try_accept_one(phys_addr_t *start, unsigned long len,
 	unsigned long accept_size = page_level_size(pg_level);
 	u64 tdcall_rcx;
 	u8 page_size;
+	u64 ret;
 
-	if (!IS_ALIGNED(*start, accept_size))
+	if (!IS_ALIGNED(*start, accept_size)) {
+		printk("cdx: %s, line %d, start=0x%llx, len=0x%lx, pg_level=%d\n", __func__, __LINE__, *start, len, pg_level);
 		return false;
+	}
 
-	if (len < accept_size)
+	if (len < accept_size) {
+		printk("cdx: %s, line %d, start=0x%llx, len=0x%lx, pg_level=%d\n", __func__, __LINE__, *start, len, pg_level);
 		return false;
+	}
 
 	/*
 	 * Pass the page physical address to the TDX module to accept the
@@ -744,17 +750,24 @@ static bool try_accept_one(phys_addr_t *start, unsigned long len,
 		break;
 	case PG_LEVEL_2M:
 		page_size = 1;
+		printk("cdx: %s, line %d, start=0x%llx, len=0x%lx, pg_level=%d\n", __func__, __LINE__, *start, len, pg_level);
 		break;
 	case PG_LEVEL_1G:
 		page_size = 2;
+		printk("cdx: %s, line %d, start=0x%llx, len=0x%lx, pg_level=%d\n", __func__, __LINE__, *start, len, pg_level);
 		break;
 	default:
+		printk("cdx: %s, line %d, start=0x%llx, len=0x%lx, pg_level=%d\n", __func__, __LINE__, *start, len, pg_level);
 		return false;
 	}
 
 	tdcall_rcx = *start | page_size;
-	if (__tdx_module_call(TDX_ACCEPT_PAGE, tdcall_rcx, 0, 0, 0, NULL))
+	//if (__tdx_module_call(TDX_ACCEPT_PAGE, tdcall_rcx, 0, 0, 0, NULL))
+	ret = __tdx_module_call(TDX_ACCEPT_PAGE, tdcall_rcx, 0, 0, 0, NULL);
+	if (ret) {
+		printk("cdx: %s, line %d, start=0x%llx, len=0x%lx, pg_level=%d, ret=%lld\n", __func__, __LINE__, *start, len, pg_level, ret);
 		return false;
+	}
 
 	*start += accept_size;
 	return true;
@@ -772,8 +785,9 @@ static bool tdx_enc_status_changed(unsigned long vaddr, int numpages, bool enc)
 	phys_addr_t end   = __pa(vaddr + numpages * PAGE_SIZE);
 	u64 ret;
 	u64 r11 = 0;
+	bool cdx = (numpages == 509);
 
-	//printk("cdx: tdx_enc_status_changed: 1: enc=%d, va=%lx, nr_pg=%d, gpa=0x%llx\n", enc, vaddr, numpages, start);
+	if (cdx) printk("cdx: tdx_enc_status_changed: 1: enc=%d, va=%lx, nr_pg=%d, gpa=0x%llx\n", enc, vaddr, numpages, start);
 	if (!enc) {
 		/* Set the shared (decrypted) bits: */
 		start |= cc_mkdec(0);
@@ -786,20 +800,20 @@ static bool tdx_enc_status_changed(unsigned long vaddr, int numpages, bool enc)
 	 * section "TDG.VP.VMCALL<MapGPA>"
 	 */
 	//if (_tdx_hypercall(TDVMCALL_MAP_GPA, start, end - start, 0, 0))
-	//printk("cdx: tdx_enc_status_changed: 2: enc=%d, va=%lx, nr_pg=%d, gpa=0x%llx\n", enc, vaddr, numpages, start);
+	if (cdx) printk("cdx: tdx_enc_status_changed: 2: enc=%d, va=%lx, nr_pg=%d, gpa=0x%llx\n", enc, vaddr, numpages, start);
 again:
 	ret = _tdx_hypercall_return_r11(TDVMCALL_MAP_GPA, start, end - start, 0, 0, &r11);
-	//printk("cdx: tdx_enc_status_changed: 3: enc=%d, bytes=0x%llx, gpa=0x%llx, ret=0x%llx\n", enc, end - start, start, ret);
+	if (cdx) printk_ratelimited("cdx: tdx_enc_status_changed: 3: enc=%d, bytes=0x%llx, gpa=0x%llx, ret=0x%llx\n", enc, end - start, start, ret);
 	if (ret == TDX_VMCALL_STATUS_RETRY) {
 		start = r11;
-		//printk("cdx: tdx_enc_status_changed: 4.1: retry: enc=%d, gpa: start=0x%llx, end=0x%llx\n", enc, start, end);
+		if (cdx) printk_ratelimited("cdx: tdx_enc_status_changed: 4.1: retry: enc=%d, gpa: start=0x%llx, end=0x%llx\n", enc, start, end);
 		if (!enc)
 			start |= cc_mkdec(0);
-		//printk("cdx: tdx_enc_status_changed: 4.2: retry: enc=%d, gpa: start=0x%llx, end=0x%llx, bytes=0x%llx\n", enc, start, end, end-start);
+		if (cdx) printk_ratelimited("cdx: tdx_enc_status_changed: 4.2: retry: enc=%d, gpa: start=0x%llx, end=0x%llx, bytes=0x%llx\n", enc, start, end, end-start);
 		goto again;
 	}
 
-	//printk("cdx: tdx_enc_status_changed: 5: enc=%d, bytes=0x%llx, gpa=0x%llx, ret=0x%llx\n", enc, end - start, start, ret);
+	if (cdx) printk("cdx: tdx_enc_status_changed: 5: enc=%d, bytes=0x%llx, gpa=0x%llx, ret=0x%llx\n", enc, end - start, start, ret);
 	if (ret)
 		return false;
 
@@ -811,6 +825,7 @@ again:
 	 * For shared->private conversion, accept the page using
 	 * TDX_ACCEPT_PAGE TDX module call.
 	 */
+	start = __pa(vaddr);
 	while (start < end) {
 		unsigned long len = end - start;
 
@@ -820,17 +835,19 @@ again:
 		 * cutting number of hypercalls (if successful).
 		 */
 
+#if 0
 		if (try_accept_one(&start, len, PG_LEVEL_1G))
 			continue;
 
 		if (try_accept_one(&start, len, PG_LEVEL_2M))
 			continue;
+#endif
 
 		if (!try_accept_one(&start, len, PG_LEVEL_4K))
 			return false;
 	}
 
-	//printk("cdx: tdx_enc_status_changed: 9: enc=%d, va=%lx, nr_pg=%d, gpa=%llx\n", enc, vaddr, numpages, start);
+	if (cdx) printk("cdx: tdx_enc_status_changed: 9: enc=%d, va=%lx, nr_pg=%d, gpa=%llx\n", enc, vaddr, numpages, start);
 	return true;
 }
 
@@ -841,7 +858,8 @@ bool tdx_enc_status_changed_gpa(u64 gpa, int numpages, bool enc)
 	u64 ret;
 	u64 r11 = 0;
 
-	//printk("cdx: tdx_enc_status_changed_gpa: 1: enc=%d, nr_pg=%d, gpa=0x%llx\n", enc, numpages, start);
+	printk_ratelimited("cdx: tdx_enc_status_changed_gpa: 1: enc=%d, nr_pg=%d, gpa=0x%llx\n", enc, numpages, start);
+	//BUG_ON(1);
 	if (!enc) {
 		/* Set the shared (decrypted) bits: */
 		start |= cc_mkdec(0);

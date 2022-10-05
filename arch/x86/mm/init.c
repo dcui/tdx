@@ -957,6 +957,7 @@ void __ref free_initmem(void)
 #endif
 }
 
+#if 0
 #ifdef CONFIG_BLK_DEV_INITRD
 void __init free_initrd_mem(unsigned long start, unsigned long end)
 {
@@ -971,6 +972,7 @@ void __init free_initrd_mem(unsigned long start, unsigned long end)
 	 */
 	free_init_pages("initrd", start, PAGE_ALIGN(end));
 }
+#endif
 #endif
 
 /*

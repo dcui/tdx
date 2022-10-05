@@ -626,6 +626,7 @@ disable:
 	initrd_end = 0;
 }
 
+#if 0
 void __weak __init free_initrd_mem(unsigned long start, unsigned long end)
 {
 #ifdef CONFIG_ARCH_KEEP_MEMBLOCK
@@ -638,6 +639,7 @@ void __weak __init free_initrd_mem(unsigned long start, unsigned long end)
 	free_reserved_area((void *)start, (void *)end, POISON_FREE_INITMEM,
 			"initrd");
 }
+#endif
 
 #ifdef CONFIG_KEXEC_CORE
 static bool __init kexec_free_initrd(void)
@@ -718,6 +720,7 @@ static void __init do_populate_rootfs(void *unused, async_cookie_t cookie)
 	}
 
 done:
+#if 0
 	/*
 	 * If the initrd region is overlapped with crashkernel reserved region,
 	 * free only memory that is not part of crashkernel region.
@@ -726,6 +729,7 @@ done:
 		free_initrd_mem(initrd_start, initrd_end);
 	initrd_start = 0;
 	initrd_end = 0;
+#endif
 
 	flush_delayed_fput();
 	task_work_run();
