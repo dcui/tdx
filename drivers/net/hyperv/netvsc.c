@@ -392,12 +392,6 @@ static int netvsc_init_buf(struct hv_device *device,
 
 		net_device->recv_original_buf = net_device->recv_buf;
 		net_device->recv_buf = vaddr;
-	} else {
-                for (i = 0; i < buf_size / HV_HYP_PAGE_SIZE; i++)
-			set_memory_decrypted_gpa(slow_virt_to_phys(net_device->recv_buf + i * HV_HYP_PAGE_SIZE), 1);
-
-                memset((void *)net_device->recv_buf, 0x00, buf_size);
-
 	}
 
 	/* Notify the NetVsp of the gpadl handle */
@@ -512,11 +506,6 @@ static int netvsc_init_buf(struct hv_device *device,
 
 		net_device->send_original_buf = net_device->send_buf;
 		net_device->send_buf = vaddr;
-	} else {
-                for (i = 0; i < buf_size / HV_HYP_PAGE_SIZE; i++)
-			set_memory_decrypted_gpa(slow_virt_to_phys(net_device->send_buf + i * HV_HYP_PAGE_SIZE), 1);
-
-                memset((void *)net_device->send_buf, 0x00, buf_size);
 	}
 
 	/* Notify the NetVsp of the gpadl handle */

@@ -5,6 +5,7 @@
 #define pr_fmt(fmt)     "tdx: " fmt
 
 #include <linux/cpufeature.h>
+#include <linux/mm.h>
 #include <asm/coco.h>
 #include <asm/tdx.h>
 #include <asm/vmx.h>
@@ -714,7 +715,8 @@ static bool try_accept_one(phys_addr_t *start, unsigned long len,
  * the VMM or private to the guest.  The VMM is expected to change its mapping
  * of the page in response.
  */
-static bool tdx_enc_status_changed(unsigned long vaddr, int numpages, bool enc)
+static bool tdx_enc_status_changed_for_contiguous_pages(unsigned long vaddr,
+							int numpages, bool enc)
 {
 	phys_addr_t start = __pa(vaddr);
 	phys_addr_t end   = __pa(vaddr + numpages * PAGE_SIZE);
@@ -732,14 +734,19 @@ static bool tdx_enc_status_changed(unsigned long vaddr, int numpages, bool enc)
 	 * can be found in TDX Guest-Host-Communication Interface (GHCI),
 	 * section "TDG.VP.VMCALL<MapGPA>"
 	 */
-	//if (_tdx_hypercall(TDVMCALL_MAP_GPA, start, end - start, 0, 0))
-again:
-	ret = _tdx_hypercall_return_r11(TDVMCALL_MAP_GPA, start, end - start, 0, 0, &r11);
-	if (ret == TDX_VMCALL_STATUS_RETRY) {
+	while (1) {
+		ret = _tdx_hypercall_return_r11(TDVMCALL_MAP_GPA, start,
+						end - start, 0, 0, &r11);
+		if (!ret)
+			break;
+
+		if (ret != TDX_VMCALL_STATUS_RETRY)
+			break;
+
+
 		start = r11;
 		if (!enc)
 			start |= cc_mkdec(0);
-		goto again;
 	}
 
 	if (ret)
@@ -776,65 +783,38 @@ again:
 	return true;
 }
 
-bool tdx_enc_status_changed_gpa(u64 gpa, int numpages, bool enc)
+bool tdx_enc_status_changed_for_vmalloc(unsigned long vaddr, int numpages, bool enc)
 {
-	phys_addr_t start = gpa;
-	phys_addr_t end   = gpa + numpages * PAGE_SIZE;
-	u64 ret;
-	u64 r11 = 0;
+	void *start_va = (void *)vaddr;
+	void *end_va = start_va + numpages * PAGE_SIZE;
+	phys_addr_t pa;
 
-	if (!enc) {
-		/* Set the shared (decrypted) bits: */
-		start |= cc_mkdec(0);
-		end   |= cc_mkdec(0);
-	}
+	WARN_ON_ONCE(offset_in_page(vaddr) != 0);
 
-	/*
-	 * Notify the VMM about page mapping conversion. More info about ABI
-	 * can be found in TDX Guest-Host-Communication Interface (GHCI),
-	 * section "TDG.VP.VMCALL<MapGPA>"
-	 */
-	//if (_tdx_hypercall(TDVMCALL_MAP_GPA, start, end - start, 0, 0))
-again:
-	ret = _tdx_hypercall_return_r11(TDVMCALL_MAP_GPA, start, end - start, 0, 0, &r11);
-	if (ret == TDX_VMCALL_STATUS_RETRY) {
-		start = r11;
+	while (start_va < end_va) {
+		pa = slow_virt_to_phys(start_va);
 		if (!enc)
-			start |= cc_mkdec(0);
-		goto again;
-	}
+			pa |= cc_mkdec(0);
 
-	if (ret)
-		return false;
-
-	/* private->shared conversion  requires only MapGPA call */
-	if (!enc)
-		return true;
-
-	/*
-	 * For shared->private conversion, accept the page using
-	 * TDX_ACCEPT_PAGE TDX module call.
-	 */
-	while (start < end) {
-		unsigned long len = end - start;
-
-		/*
-		 * Try larger accepts first. It gives chance to VMM to keep
-		 * 1G/2M SEPT entries where possible and speeds up process by
-		 * cutting number of hypercalls (if successful).
-		 */
-
-		if (try_accept_one(&start, len, PG_LEVEL_1G))
-			continue;
-
-		if (try_accept_one(&start, len, PG_LEVEL_2M))
-			continue;
-
-		if (!try_accept_one(&start, len, PG_LEVEL_4K))
+		if (_tdx_hypercall(TDVMCALL_MAP_GPA, pa, PAGE_SIZE, 0, 0))
 			return false;
+
+		/* private->shared conversion requires only MapGPA call */
+		if (enc && !try_accept_one(&pa, PAGE_SIZE, PG_LEVEL_4K))
+			return false;
+
+		start_va += PAGE_SIZE;
 	}
 
 	return true;
+}
+
+static bool tdx_enc_status_changed(unsigned long vaddr, int numpages, bool enc)
+{
+	if (is_vmalloc_addr((void *)vaddr))
+		return tdx_enc_status_changed_for_vmalloc(vaddr, numpages, enc);
+
+	return tdx_enc_status_changed_for_contiguous_pages(vaddr, numpages, enc);
 }
 
 void __init tdx_early_init(void)

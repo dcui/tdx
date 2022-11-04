@@ -2062,14 +2062,10 @@ static int __set_memory_enc_pgtable(unsigned long addr, int numpages, bool enc)
 
 	/* Notify hypervisor that we have successfully set/clr encryption attribute. */
 	if (!ret) {
-		if (is_vmalloc_addr((void *)addr))
-			goto out;
-
 		if (!x86_platform.guest.enc_status_change_finish(addr, numpages, enc))
 			ret = -EIO;
 	}
 
-out:
 	return ret;
 }
 
@@ -2086,20 +2082,6 @@ static int __set_memory_enc_dec(unsigned long addr, int numpages, bool enc)
 	return 0;
 #endif
 }
-
-extern bool tdx_enc_status_changed_gpa(u64 gpa, int numpages, bool enc);
-
-int set_memory_encrypted_gpa(u64 gpa, int numpages)
-{
-	return tdx_enc_status_changed_gpa(gpa, numpages, true);
-}
-EXPORT_SYMBOL_GPL(set_memory_encrypted_gpa);
-
-int set_memory_decrypted_gpa(u64 gpa, int numpages)
-{
-	return tdx_enc_status_changed_gpa(gpa, numpages, false);
-}
-EXPORT_SYMBOL_GPL(set_memory_decrypted_gpa);
 
 int set_memory_encrypted(unsigned long addr, int numpages)
 {
