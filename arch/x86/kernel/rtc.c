@@ -82,10 +82,8 @@ void mach_get_cmos_time(struct timespec64 *now)
 	 * is the reliable way to read RTC - registers. If UIP is set
 	 * then the register access might be invalid.
 	 */
-#if 0
 	while ((CMOS_READ(RTC_FREQ_SELECT) & RTC_UIP))
 		cpu_relax();
-#endif
 
 	sec = CMOS_READ(RTC_SECONDS);
 	min = CMOS_READ(RTC_MINUTES);

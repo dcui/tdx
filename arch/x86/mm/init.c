@@ -947,17 +947,14 @@ void free_kernel_image_pages(const char *what, void *begin, void *end)
 
 void __ref free_initmem(void)
 {
-#if 0
 	e820__reallocate_tables();
 
 	mem_encrypt_free_decrypted_mem();
 
 	free_kernel_image_pages("unused kernel image (initmem)",
 				&__init_begin, &__init_end);
-#endif
 }
 
-#if 0
 #ifdef CONFIG_BLK_DEV_INITRD
 void __init free_initrd_mem(unsigned long start, unsigned long end)
 {
@@ -972,7 +969,6 @@ void __init free_initrd_mem(unsigned long start, unsigned long end)
 	 */
 	free_init_pages("initrd", start, PAGE_ALIGN(end));
 }
-#endif
 #endif
 
 /*
