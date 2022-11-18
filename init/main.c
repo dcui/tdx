@@ -1485,7 +1485,7 @@ static inline void mark_readonly(void)
 
 void __weak free_initmem(void)
 {
-	//free_initmem_default(POISON_FREE_INITMEM);
+	free_initmem_default(POISON_FREE_INITMEM);
 }
 
 static int __ref kernel_init(void *unused)
@@ -1506,7 +1506,7 @@ static int __ref kernel_init(void *unused)
 	ftrace_free_init_mem();
 	kgdb_free_init_mem();
 	exit_boot_config();
-	//free_initmem();
+	free_initmem();
 	mark_readonly();
 
 	/*

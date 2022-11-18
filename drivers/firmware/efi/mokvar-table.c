@@ -309,8 +309,6 @@ static ssize_t efi_mokvar_sysfs_read(struct file *file, struct kobject *kobj,
  */
 static int __init efi_mokvar_sysfs_init(void)
 {
-	return 0;
-#if 0
 	void *config_va;
 	struct efi_mokvar_table_entry *mokvar_entry = NULL;
 	struct efi_mokvar_sysfs_attr *mokvar_sysfs = NULL;
@@ -360,6 +358,5 @@ static int __init efi_mokvar_sysfs_init(void)
 		kfree(mokvar_sysfs);
 	}
 	return err;
-#endif
 }
 fs_initcall(efi_mokvar_sysfs_init);
