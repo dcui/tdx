@@ -21,6 +21,8 @@
 /* TDX hypercall Leaf IDs */
 #define TDVMCALL_MAP_GPA		0x10001
 
+#define TDVMCALL_STATUS_RETRY		1
+
 /* MMIO direction */
 #define EPT_READ	0
 #define EPT_WRITE	1
@@ -53,7 +55,8 @@ static inline u64 _tdx_hypercall(u64 fn, u64 r12, u64 r13, u64 r14, u64 r15)
 	return __tdx_hypercall(&args, 0);
 }
 
-static inline u64 _tdx_hypercall_return_r11(u64 fn, u64 r12, u64 r13, u64 r14, u64 r15, u64 *r11)
+static inline u64 _tdx_hypercall_return_r11(u64 fn, u64 r12, u64 r13, u64 r14,
+					    u64 r15, u64 *r11)
 {
 	struct tdx_hypercall_args args = {
 		.r10 = TDX_HYPERCALL_STANDARD,
@@ -63,6 +66,7 @@ static inline u64 _tdx_hypercall_return_r11(u64 fn, u64 r12, u64 r13, u64 r14, u
 		.r14 = r14,
 		.r15 = r15,
 	};
+
 	u64 ret;
 
 	ret = __tdx_hypercall(&args, TDX_HCALL_HAS_OUTPUT);
@@ -709,7 +713,6 @@ static bool try_accept_one(phys_addr_t *start, unsigned long len,
 	return true;
 }
 
-#define TDX_VMCALL_STATUS_RETRY             1
 /*
  * Inform the VMM of the guest's intent for this physical page: shared with
  * the VMM or private to the guest.  The VMM is expected to change its mapping
@@ -720,8 +723,8 @@ static bool tdx_enc_status_changed_for_contiguous_pages(unsigned long vaddr,
 {
 	phys_addr_t start = __pa(vaddr);
 	phys_addr_t end   = __pa(vaddr + numpages * PAGE_SIZE);
+	u64 r11;
 	u64 ret;
-	u64 r11 = 0;
 
 	if (!enc) {
 		/* Set the shared (decrypted) bits: */
@@ -740,11 +743,20 @@ static bool tdx_enc_status_changed_for_contiguous_pages(unsigned long vaddr,
 		if (!ret)
 			break;
 
-		if (ret != TDX_VMCALL_STATUS_RETRY)
+		if (ret != TDVMCALL_STATUS_RETRY)
 			break;
 
+		/*
+		 * The guest must retry the operation for the pages in the
+		 * region starting at the GPA specified in R11. Make sure R11
+		 * contains a sane value.
+		 */
+		if ((r11 & ~cc_mkdec(0)) < (start & ~cc_mkdec(0)) ||
+		    (r11 & ~cc_mkdec(0)) >= (end  & ~cc_mkdec(0)))
+			return false;
 
 		start = r11;
+
 		if (!enc)
 			start |= cc_mkdec(0);
 	}
@@ -789,7 +801,8 @@ bool tdx_enc_status_changed_for_vmalloc(unsigned long vaddr, int numpages, bool 
 	void *end_va = start_va + numpages * PAGE_SIZE;
 	phys_addr_t pa;
 
-	WARN_ON_ONCE(offset_in_page(vaddr) != 0);
+	if (offset_in_page(vaddr) != 0)
+		return false;
 
 	while (start_va < end_va) {
 		pa = slow_virt_to_phys(start_va);
