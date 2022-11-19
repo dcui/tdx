@@ -36,21 +36,8 @@ int hv_call_deposit_pages(int node, u64 partition_id, u32 num_pages);
 int hv_call_add_logical_proc(int node, u32 lp_index, u32 acpi_id);
 int hv_call_create_vp(int node, u64 partition_id, u32 vp_index, u32 flags);
 
-// rax = __tdcall_hyperv(control, output_addr, input_addr);
-u64 __tdcall_hyperv(u64 control, u64 output_addr, u64 input_addr);
+u64 __tdx_ms_hv_hypercall(u64 control, u64 output_addr, u64 input_addr);
 
-//RE: TDX hypercall conventions
-static u64 tdcall_hyperv(u64 control, u64 input_addr, u64 output_addr)
-{
-	unsigned long flags;
-	u64 rax;
-
-	local_irq_save(flags);
-	rax = __tdcall_hyperv(control, output_addr, input_addr);
-	local_irq_restore(flags);
-
-	return rax;
-}
 
 static inline u64 hv_do_hypercall(u64 control, void *input, void *output)
 {
@@ -67,7 +54,7 @@ static inline u64 hv_do_hypercall(u64 control, void *input, void *output)
 
 	if (output_address)
 		output_address += BIT_ULL(47);
-	return tdcall_hyperv(control, input_address, output_address);
+	return __tdx_ms_hv_hypercall(control, output_address, input_address);
 #if 0
 
 	__asm__ __volatile__("mov %4, %%r8\n"
@@ -105,7 +92,7 @@ static inline u64 hv_do_fast_hypercall8(u16 code, u64 input1)
 	u64 hv_status, control = (u64)code | HV_HYPERCALL_FAST_BIT;
 
 #ifdef CONFIG_X86_64
-	return tdcall_hyperv(control, input1, 0);
+	return __tdx_ms_hv_hypercall(control, 0, input1);
 #if 0
 	{
 		__asm__ __volatile__(CALL_NOSPEC
@@ -139,7 +126,7 @@ static inline u64 hv_do_fast_hypercall16(u16 code, u64 input1, u64 input2)
 	u64 hv_status, control = (u64)code | HV_HYPERCALL_FAST_BIT;
 
 #ifdef CONFIG_X86_64
-	return tdcall_hyperv(control, input1, input2);
+	return __tdx_ms_hv_hypercall(control, input2, input1);
 #if 0
 	{
 		__asm__ __volatile__("mov %4, %%r8\n"

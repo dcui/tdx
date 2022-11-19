@@ -204,42 +204,51 @@ SYM_FUNC_START(__tdx_hypercall)
 	jmp .Lpanic
 SYM_FUNC_END(__tdx_hypercall)
 
-SYM_FUNC_START(__tdcall_hyperv)
-        FRAME_BEGIN
+SYM_FUNC_START(__tdx_ms_hv_hypercall)
+	FRAME_BEGIN
 
         /*
                                %rdi,       %rsi,        %rdx
-        rax = __tdcall_hyperv(control, output_addr, input_addr);
+		rax = __tdcall_hyperv(control, output_addr, input_addr);
 
 
-         * 0    => RAX = TDCALL leaf
-         * RDI  => R10 = control value
-         * RSI  => R8  = output addr
-         * RDX  => RDX = input address   ==> no change.
-         * MASK => RCX = 0x0d04 //pass rdx, r8, r10, r11 to Hyper-V
-         */
+	* 0    => RAX = TDCALL leaf
+	* RDI  => R10 = control value
+	* RSI  => R8  = output addr
+	* RDX  => RDX = input address   ==> no change.
+	* MASK => RCX = 0x0d04 //pass rdx, r8, r10, r11 to Hyper-V
+	*/
 
-        xor %eax, %eax /* load TDG.VP.VMCALL code */
-	xor %r11, %r11 /* clear return code register */
+	/* Mangle function call ABI into TDCALL ABI: */
+	/* Set TDCALL leaf ID (TDVMCALL (0)) in RAX */
+	xor %eax, %eax
 
-        mov %rdi, %r10 /* load call code into call code register */
-	mov %rsi, %r8  /* output addr */
-        mov $0x0d04, %ecx /* pass rdx, r8, r10, r11 to Hyper-V*/
+	/* Clear return code register */
+	xor %r11, %r11
 
-        tdcall
+	/* load call code into call code register */
+	mov %rdi, %r10
+
+	/* output addr */
+	mov %rsi, %r8
+
+	/* pass rdx, r8, r10, r11 to Hyper-V*/
+	mov $0x0d04, %ecx
+
+	tdcall
 
 	testq %rax, %rax
-	jne .Lpanic2
+	jne .Lpanic_ms_hv
 
-        /* Save R11 to output pointer */
-        movq %r11, %rax
+	/* Save R11 to output pointer */
+	movq %r11, %rax
 
-        FRAME_END
+	FRAME_END
 
-        RET
-.Lpanic2:
+	RET
+.Lpanic_ms_hv:
 	call __tdx_hypercall_failed
 	/* __tdx_hypercall_failed never returns */
 	REACHABLE
-	jmp .Lpanic2
-SYM_FUNC_END(__tdcall_hyperv)
+	jmp .Lpanic_ms_hv
+SYM_FUNC_END(__tdx_ms_hv_hypercall)
