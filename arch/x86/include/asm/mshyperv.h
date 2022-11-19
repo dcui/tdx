@@ -44,17 +44,22 @@ static inline u64 hv_do_hypercall(u64 control, void *input, void *output)
 	u64 output_address = output ? virt_to_phys(output) : 0;
 	u64 hv_status;
 
+#if CONFIG_INTEL_TDX_GUEST
+	if (cpu_feature_enabled(X86_FEATURE_TDX_GUEST)) {
+		if (input_address)
+			input_address += BIT_ULL(47);
+
+		if (output_address)
+			output_address += BIT_ULL(47);
+
+		return __tdx_ms_hv_hypercall(control, output_address,
+					     input_address);
+	}
+#endif
+
 #ifdef CONFIG_X86_64
-	//if (!hv_hypercall_pg)
-	//	return U64_MAX;
-
-	if (input_address)
-		input_address += BIT_ULL(47);
-
-	if (output_address)
-		output_address += BIT_ULL(47);
-	return __tdx_ms_hv_hypercall(control, output_address, input_address);
-#if 0
+	if (!hv_hypercall_pg)
+		return U64_MAX;
 
 	__asm__ __volatile__("mov %4, %%r8\n"
 			     CALL_NOSPEC
@@ -63,7 +68,6 @@ static inline u64 hv_do_hypercall(u64 control, void *input, void *output)
 			     :  "r" (output_address),
 				THUNK_TARGET(hv_hypercall_pg)
 			     : "cc", "memory", "r8", "r9", "r10", "r11");
-#endif
 #else
 	u32 input_address_hi = upper_32_bits(input_address);
 	u32 input_address_lo = lower_32_bits(input_address);
@@ -90,9 +94,12 @@ static inline u64 hv_do_fast_hypercall8(u16 code, u64 input1)
 {
 	u64 hv_status, control = (u64)code | HV_HYPERCALL_FAST_BIT;
 
+#if CONFIG_INTEL_TDX_GUEST
+	if (cpu_feature_enabled(X86_FEATURE_TDX_GUEST))
+		return __tdx_ms_hv_hypercall(control, 0, input1);
+#endif
+
 #ifdef CONFIG_X86_64
-	return __tdx_ms_hv_hypercall(control, 0, input1);
-#if 0
 	{
 		__asm__ __volatile__(CALL_NOSPEC
 				     : "=a" (hv_status), ASM_CALL_CONSTRAINT,
@@ -100,7 +107,6 @@ static inline u64 hv_do_fast_hypercall8(u16 code, u64 input1)
 				     : THUNK_TARGET(hv_hypercall_pg)
 				     : "cc", "r8", "r9", "r10", "r11");
 	}
-#endif
 #else
 	{
 		u32 input1_hi = upper_32_bits(input1);
@@ -124,9 +130,12 @@ static inline u64 hv_do_fast_hypercall16(u16 code, u64 input1, u64 input2)
 {
 	u64 hv_status, control = (u64)code | HV_HYPERCALL_FAST_BIT;
 
+#if CONFIG_INTEL_TDX_GUEST
+	if (cpu_feature_enabled(X86_FEATURE_TDX_GUEST))
+		return __tdx_ms_hv_hypercall(control, input2, input1);
+#endif
+
 #ifdef CONFIG_X86_64
-	return __tdx_ms_hv_hypercall(control, input2, input1);
-#if 0
 	{
 		__asm__ __volatile__("mov %4, %%r8\n"
 				     CALL_NOSPEC
@@ -136,7 +145,6 @@ static inline u64 hv_do_fast_hypercall16(u16 code, u64 input1, u64 input2)
 				       THUNK_TARGET(hv_hypercall_pg)
 				     : "cc", "r8", "r9", "r10", "r11");
 	}
-#endif
 #else
 	{
 		u32 input1_hi = upper_32_bits(input1);
