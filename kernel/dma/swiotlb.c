@@ -254,8 +254,10 @@ void __init swiotlb_update_mem_attributes(void)
 		return;
 	vaddr = phys_to_virt(mem->start);
 	bytes = PAGE_ALIGN(mem->nslabs << IO_TLB_SHIFT);
+
 	ret = set_memory_decrypted((unsigned long)vaddr, bytes >> PAGE_SHIFT);
-	WARN(ret, "swiotlb_update_mem_attributes: ret=%d, va=0x%px, size-in-bytes=0x%lx\n", ret, vaddr, bytes);
+	if (ret)
+		panic("Failed to decrypt swiotlb bounce buffers (%d)\n", ret);
 
 	mem->vaddr = swiotlb_mem_remap(mem, bytes);
 	if (!mem->vaddr)
