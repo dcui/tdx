@@ -236,7 +236,7 @@ int hv_ringbuffer_init(struct hv_ring_buffer_info *ring_info,
 			vmap(pages_wraparound, page_cnt * 2 - 1, VM_MAP,
 				pgprot_decrypted(PAGE_KERNEL_NOENC));
 
-		memset((void *)ring_info->ring_buffer, 0x00, page_cnt * PAGE_SIZE);
+		memset((void *)ring_info->ring_buffer, 0, page_cnt * PAGE_SIZE);
 
 		kfree(pages_wraparound);
 		if (!ring_info->ring_buffer)

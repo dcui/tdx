@@ -269,8 +269,6 @@ static void __init ms_hyperv_init_platform(void)
 	 * Extract the features and hints
 	 */
 	ms_hyperv.features = cpuid_eax(HYPERV_CPUID_FEATURES);
-	ms_hyperv.features &= ~HV_MSR_REFERENCE_TSC_AVAILABLE; //hide the TSC page
-
 	ms_hyperv.priv_high = cpuid_ebx(HYPERV_CPUID_FEATURES);
 	ms_hyperv.misc_features = cpuid_edx(HYPERV_CPUID_FEATURES);
 	ms_hyperv.hints    = cpuid_eax(HYPERV_CPUID_ENLIGHTMENT_INFO);
@@ -327,9 +325,9 @@ static void __init ms_hyperv_init_platform(void)
 	if (ms_hyperv.priv_high & HV_ISOLATION) {
 		ms_hyperv.isolation_config_a = cpuid_eax(HYPERV_CPUID_ISOLATION_CONFIG);
 		ms_hyperv.isolation_config_b = cpuid_ebx(HYPERV_CPUID_ISOLATION_CONFIG);
+		BUG_ON(ms_hyperv.shared_gpa_boundary_bits != 0); //cdx
 		ms_hyperv.shared_gpa_boundary =
 			BIT_ULL(ms_hyperv.shared_gpa_boundary_bits);
-		ms_hyperv.shared_gpa_boundary = 0;
 
 		pr_info("Hyper-V: Isolation Config: Group A 0x%x, Group B 0x%x\n",
 			ms_hyperv.isolation_config_a, ms_hyperv.isolation_config_b);
@@ -339,13 +337,25 @@ static void __init ms_hyperv_init_platform(void)
 #ifdef CONFIG_SWIOTLB
 			swiotlb_unencrypted_base = ms_hyperv.shared_gpa_boundary;
 #endif
-		} else {
-			swiotlb_unencrypted_base = ms_hyperv.shared_gpa_boundary;
 		}
 		/* Isolation VMs are unenlightened SEV-based VMs, thus this check: */
-		if (IS_ENABLED(CONFIG_AMD_MEM_ENCRYPT)) {
-			if (hv_get_isolation_type() != HV_ISOLATION_TYPE_NONE)
-				cc_set_vendor(CC_VENDOR_INTEL); ////XXX
+		if (IS_ENABLED(CONFIG_AMD_MEM_ENCRYPT) ||
+		    IS_ENABLED(CONFIG_INTEL_TDX_GUEST)) {
+
+			switch (hv_get_isolation_type()) {
+			case HV_ISOLATION_TYPE_SNP:
+				cc_set_vendor(CC_VENDOR_HYPERV);
+				break;
+			case HV_ISOLATION_TYPE_TDX:
+				cc_set_vendor(CC_VENDOR_INTEL);
+
+				/* Don't use the unsafe Hyper-V TSC page. */
+				ms_hyperv.features &=
+					~HV_MSR_REFERENCE_TSC_AVAILABLE;
+				break;
+			default:
+				break;
+			}
 		}
 	}
 
