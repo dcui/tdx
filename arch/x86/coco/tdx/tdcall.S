@@ -13,6 +13,8 @@
 /*
  * Bitmasks of exposed registers (with VMM).
  */
+#define TDX_RDX		BIT(2)
+#define TDX_R8		BIT(8)
 #define TDX_R10		BIT(10)
 #define TDX_R11		BIT(11)
 #define TDX_R12		BIT(12)
@@ -204,15 +206,51 @@ SYM_FUNC_START(__tdx_hypercall)
 	jmp .Lpanic
 SYM_FUNC_END(__tdx_hypercall)
 
+/*
+ * __tdx_ms_hv_hypercall() - Make hypercalls to Hype-V using TDVMCALL leaf
+ * of TDCALL instruction
+ *
+ * Transforms values in function call arguments "input control, output_addr,
+ * and input_addr" into the TDCALL register ABI. After TDCALL operation,
+ * Hyper-V has changed the memory pointed by output_addr, and R11 is the
+ * output control code. Note: before the TDCALL operation, the guest must
+ * share the memory pointed by input_addr and output_addr with Hyper-V.
+ *-------------------------------------------------------------------------
+ * TD VMCALL ABI on Hyper-V:
+ *-------------------------------------------------------------------------
+ *
+ * Input Registers:
+ *
+ * RAX                 - TDCALL instruction leaf number (0 - TDG.VP.VMCALL)
+ * RCX                 - BITMAP which controls which part of TD Guest GPR
+ *                         is passed as-is to the VMM and back.
+ * R10                 - Set to Hyper-V hypercall input control code.
+ *                         Note: legal Hyper-V hypercall input control codes
+ *                         are always non-zero, i.e. they don't conflict with
+ *                         TDX_HYPERCALL_STANDARD.
+ * R8                  - Output physical addr.
+ * RDX                 - Input physical addr.
+ *
+ * Output Registers:
+ *
+ * RAX                 - TDCALL instruction status (Not related to hypercall
+ *                         output).
+ * R11                 - Output control code.
+ *
+ *-------------------------------------------------------------------------
+ *
+ * __tdx_ms_hv_hypercall() function ABI:
+ *
+ * @arg   (RDI)        - input control code
+ * @arg   (RSI)        - output address
+ * @arg   (RDX)        - input address. RDX can be passed to Hyper-V directly.
+ *
+ * On successful completion, return the hypercall error code.
+ */
 SYM_FUNC_START(__tdx_ms_hv_hypercall)
 	FRAME_BEGIN
 
         /*
-                               %rdi,       %rsi,        %rdx
-		rax = __tdcall_hyperv(control, output_addr, input_addr);
-
-
-	* 0    => RAX = TDCALL leaf
 	* RDI  => R10 = control value
 	* RSI  => R8  = output addr
 	* RDX  => RDX = input address   ==> no change.
@@ -232,8 +270,8 @@ SYM_FUNC_START(__tdx_ms_hv_hypercall)
 	/* output addr */
 	mov %rsi, %r8
 
-	/* pass rdx, r8, r10, r11 to Hyper-V*/
-	mov $0x0d04, %ecx
+	/* Expose these registers to Hyper-V */
+	mov $(TDX_RDX | TDX_R8 | TDX_R10 |TDX_R11), %ecx
 
 	tdcall
 
