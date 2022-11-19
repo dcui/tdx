@@ -241,44 +241,44 @@ SYM_FUNC_END(__tdx_hypercall)
  *
  * __tdx_ms_hv_hypercall() function ABI:
  *
- * @arg   (RDI)        - input control code
- * @arg   (RSI)        - output address
- * @arg   (RDX)        - input address. RDX can be passed to Hyper-V directly.
+ * @arg   (RDI)        - Input control code, moved to R10
+ * @arg   (RSI)        - Output address, moved to R8
+ * @arg   (RDX)        - Input address. RDX is passed to Hyper-V as-is.
  *
- * On successful completion, return the hypercall error code.
+ * On successful completion, return the hypercall output control code.
  */
 SYM_FUNC_START(__tdx_ms_hv_hypercall)
 	FRAME_BEGIN
 
-        /*
-	* RDI  => R10 = control value
-	* RSI  => R8  = output addr
-	* RDX  => RDX = input address   ==> no change.
-	* MASK => RCX = 0x0d04 //pass rdx, r8, r10, r11 to Hyper-V
-	*/
-
-	/* Mangle function call ABI into TDCALL ABI: */
 	/* Set TDCALL leaf ID (TDVMCALL (0)) in RAX */
 	xor %eax, %eax
 
-	/* Clear return code register */
+	/* Do not leak the value of the output-only register to Hyper-V */
 	xor %r11, %r11
 
-	/* load call code into call code register */
+	/* Load input control code */
 	mov %rdi, %r10
 
-	/* output addr */
+	/* Load output addr. NB: input addr is already in RDX. */
 	mov %rsi, %r8
 
-	/* Expose these registers to Hyper-V */
+	/* Expose these registers to Hyper-V as-is */
 	mov $(TDX_RDX | TDX_R8 | TDX_R10 |TDX_R11), %ecx
 
 	tdcall
 
+	/*
+	 * RAX==0 indicates a failure of the TDVMCALL mechanism itself and that
+	 * something has gone horribly wrong with the TDX module.
+	 *
+	 * The return status of the hypercall operation is in a separate
+	 * register (in R11). Hypercall errors are a part of normal operation
+	 * and are handled by callers.
+	 */
 	testq %rax, %rax
 	jne .Lpanic_ms_hv
 
-	/* Save R11 to output pointer */
+	/* Copy output control code as the function's return value */
 	movq %r11, %rax
 
 	FRAME_END
