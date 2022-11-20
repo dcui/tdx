@@ -235,16 +235,12 @@ void hv_synic_enable_regs(unsigned int cpu)
 		if (!hv_cpu->synic_message_page)
 			pr_err("Fail to map syinc message page.\n");
 	} else {
-		simp.base_simp_gpa = (BIT_ULL(47) + virt_to_phys(hv_cpu->synic_message_page))
+		simp.base_simp_gpa = virt_to_phys(hv_cpu->synic_message_page)
 			>> HV_HYP_PAGE_SHIFT;
 
-#if 0
-		hv_cpu->synic_message_page
-			= memremap(simp.base_simp_gpa << HV_HYP_PAGE_SHIFT,
-				   HV_HYP_PAGE_SIZE, MEMREMAP_WB);
-		if (!hv_cpu->synic_message_page)
-			pr_err("Fail to map syinc message page.\n");
-#endif
+		if (cpu_feature_enabled(X86_FEATURE_TDX_GUEST))
+			simp.base_simp_gpa += ms_hyperv.shared_gpa_boundary
+				>> HV_HYP_PAGE_SHIFT;
 	}
 
 	hv_set_register(HV_REGISTER_SIMP, simp.as_uint64);
@@ -261,17 +257,12 @@ void hv_synic_enable_regs(unsigned int cpu)
 		if (!hv_cpu->synic_event_page)
 			pr_err("Fail to map syinc event page.\n");
 	} else {
-		siefp.base_siefp_gpa = (BIT_ULL(47) + virt_to_phys(hv_cpu->synic_event_page))
+		siefp.base_siefp_gpa = virt_to_phys(hv_cpu->synic_event_page)
 			>> HV_HYP_PAGE_SHIFT;
 
-#if 0
-		hv_cpu->synic_event_page =
-			memremap(siefp.base_siefp_gpa << HV_HYP_PAGE_SHIFT,
-				 HV_HYP_PAGE_SIZE, MEMREMAP_WB);
-
-		if (!hv_cpu->synic_event_page)
-			pr_err("Fail to map syinc event page.\n");
-#endif
+		if (cpu_feature_enabled(X86_FEATURE_TDX_GUEST))
+			siefp.base_siefp_gpa += ms_hyperv.shared_gpa_boundary
+				>> HV_HYP_PAGE_SHIFT;
 	}
 
 	hv_set_register(HV_REGISTER_SIEFP, siefp.as_uint64);

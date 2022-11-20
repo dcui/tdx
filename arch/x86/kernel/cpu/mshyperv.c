@@ -325,7 +325,6 @@ static void __init ms_hyperv_init_platform(void)
 	if (ms_hyperv.priv_high & HV_ISOLATION) {
 		ms_hyperv.isolation_config_a = cpuid_eax(HYPERV_CPUID_ISOLATION_CONFIG);
 		ms_hyperv.isolation_config_b = cpuid_ebx(HYPERV_CPUID_ISOLATION_CONFIG);
-		BUG_ON(ms_hyperv.shared_gpa_boundary_bits != 0); //cdx
 		ms_hyperv.shared_gpa_boundary =
 			BIT_ULL(ms_hyperv.shared_gpa_boundary_bits);
 
@@ -348,6 +347,8 @@ static void __init ms_hyperv_init_platform(void)
 				break;
 			case HV_ISOLATION_TYPE_TDX:
 				cc_set_vendor(CC_VENDOR_INTEL);
+
+				ms_hyperv.shared_gpa_boundary = cc_mkdec(0);
 
 				/* Don't use the unsafe Hyper-V TSC page. */
 				ms_hyperv.features &=
