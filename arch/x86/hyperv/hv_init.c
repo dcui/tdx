@@ -76,18 +76,18 @@ static int hyperv_init_ghcb(void)
 
 static int hv_cpu_init(unsigned int cpu)
 {
-	//union hv_vp_assist_msr_contents msr = { 0 };
-	//struct hv_vp_assist_page **hvp = &hv_vp_assist_page[smp_processor_id()];
+	union hv_vp_assist_msr_contents msr = { 0 };
+	struct hv_vp_assist_page **hvp;
 	int ret;
 
 	ret = hv_common_cpu_init(cpu);
 	if (ret)
 		return ret;
 
-#if 0
 	if (!hv_vp_assist_page)
 		return 0;
 
+	hvp = &hv_vp_assist_page[smp_processor_id()];
 	if (!*hvp) {
 		if (hv_root_partition) {
 			/*
@@ -117,7 +117,6 @@ static int hv_cpu_init(unsigned int cpu)
 			wrmsrl(HV_X64_MSR_VP_ASSIST_PAGE, msr.as_uint64);
 		}
 	}
-#endif
 
 	return hyperv_init_ghcb();
 }
@@ -228,7 +227,6 @@ static int hv_cpu_die(unsigned int cpu)
 
 	hv_common_cpu_die(cpu);
 
-#if 0
 	if (hv_vp_assist_page && hv_vp_assist_page[cpu]) {
 		union hv_vp_assist_msr_contents msr = { 0 };
 		if (hv_root_partition) {
@@ -245,7 +243,6 @@ static int hv_cpu_die(unsigned int cpu)
 		}
 		wrmsrl(HV_X64_MSR_VP_ASSIST_PAGE, msr.as_uint64);
 	}
-#endif
 
 	if (hv_reenlightenment_cb == NULL)
 		return 0;
@@ -402,14 +399,19 @@ void __init hyperv_init(void)
 	if (hv_common_init())
 		return;
 
-#if 0
-	hv_vp_assist_page = kcalloc(num_possible_cpus(),
-				    sizeof(*hv_vp_assist_page), GFP_KERNEL);
+	if (cpu_feature_enabled(X86_FEATURE_TDX_GUEST))
+		hv_vp_assist_page = NULL;
+	else
+
+		hv_vp_assist_page = kcalloc(num_possible_cpus(),
+					    sizeof(*hv_vp_assist_page),
+					    GFP_KERNEL);
 	if (!hv_vp_assist_page) {
 		ms_hyperv.hints &= ~HV_X64_ENLIGHTENED_VMCS_RECOMMENDED;
-		goto common_free;
+
+		if (!cpu_feature_enabled(X86_FEATURE_TDX_GUEST))
+			goto common_free;
 	}
-#endif
 
 	if (hv_isolation_type_snp()) {
 		/* Negotiate GHCB Version. */
@@ -479,6 +481,7 @@ void __init hyperv_init(void)
 		hypercall_msr.guest_physical_address = vmalloc_to_pfn(hv_hypercall_pg);
 		wrmsrl(HV_X64_MSR_HYPERCALL, hypercall_msr.as_uint64);
 	}
+
 skip_hypercall_pg_init:
 	/*
 	 * hyperv_init() is called before LAPIC is initialized: see
@@ -536,7 +539,7 @@ free_ghcb_page:
 free_vp_assist_page:
 	kfree(hv_vp_assist_page);
 	hv_vp_assist_page = NULL;
-//common_free:
+common_free:
 	hv_common_free();
 }
 
