@@ -20,6 +20,8 @@
 /* TDX hypercall Leaf IDs */
 #define TDVMCALL_MAP_GPA		0x10001
 
+#define TDVMCALL_STATUS_RETRY		1
+
 /* MMIO direction */
 #define EPT_READ	0
 #define EPT_WRITE	1
@@ -50,6 +52,25 @@ static inline u64 _tdx_hypercall(u64 fn, u64 r12, u64 r13, u64 r14, u64 r15)
 	};
 
 	return __tdx_hypercall(&args, 0);
+}
+
+static inline u64 _tdx_hypercall_return_r11(u64 fn, u64 r12, u64 r13, u64 r14,
+					    u64 r15, u64 *r11)
+{
+	struct tdx_hypercall_args args = {
+		.r10 = TDX_HYPERCALL_STANDARD,
+		.r11 = fn,
+		.r12 = r12,
+		.r13 = r13,
+		.r14 = r14,
+		.r15 = r15,
+	};
+
+	u64 ret;
+
+	ret = __tdx_hypercall(&args, TDX_HCALL_HAS_OUTPUT);
+	*r11 = args.r11;
+	return ret;
 }
 
 /* Called from __tdx_hypercall() for unrecoverable failure */
@@ -700,6 +721,8 @@ static bool tdx_enc_status_changed(unsigned long vaddr, int numpages, bool enc)
 {
 	phys_addr_t start = __pa(vaddr);
 	phys_addr_t end   = __pa(vaddr + numpages * PAGE_SIZE);
+	u64 r11;
+	u64 ret;
 
 	if (!enc) {
 		/* Set the shared (decrypted) bits: */
@@ -712,7 +735,31 @@ static bool tdx_enc_status_changed(unsigned long vaddr, int numpages, bool enc)
 	 * can be found in TDX Guest-Host-Communication Interface (GHCI),
 	 * section "TDG.VP.VMCALL<MapGPA>"
 	 */
-	if (_tdx_hypercall(TDVMCALL_MAP_GPA, start, end - start, 0, 0))
+	while (1) {
+		ret = _tdx_hypercall_return_r11(TDVMCALL_MAP_GPA, start,
+						end - start, 0, 0, &r11);
+		if (!ret)
+			break;
+
+		if (ret != TDVMCALL_STATUS_RETRY)
+			break;
+
+		/*
+		 * The guest must retry the operation for the pages in the
+		 * region starting at the GPA specified in R11. Make sure R11
+		 * contains a sane value.
+		 */
+		if ((r11 & ~cc_mkdec(0)) < (start & ~cc_mkdec(0)) ||
+		    (r11 & ~cc_mkdec(0)) >= (end  & ~cc_mkdec(0)))
+			return false;
+
+		start = r11;
+
+		if (!enc)
+			start |= cc_mkdec(0);
+	}
+
+	if (ret)
 		return false;
 
 	/* private->shared conversion  requires only MapGPA call */
@@ -723,6 +770,7 @@ static bool tdx_enc_status_changed(unsigned long vaddr, int numpages, bool enc)
 	 * For shared->private conversion, accept the page using
 	 * TDX_ACCEPT_PAGE TDX module call.
 	 */
+	start = __pa(vaddr);
 	while (start < end) {
 		unsigned long len = end - start;
 
