@@ -120,6 +120,7 @@ int hv_synic_alloc(void)
 {
 	int cpu;
 	struct hv_per_cpu_context *hv_cpu;
+	int ret;
 
 	/*
 	 * First, zero all per-cpu memory areas so hv_synic_free() can
@@ -171,15 +172,19 @@ int hv_synic_alloc(void)
 		}
 
 
-		BUG_ON(set_memory_decrypted((unsigned long)hv_cpu->synic_message_page, 1) != 0);
+		if (cpu_feature_enabled(X86_FEATURE_TDX_GUEST)) {
+			ret = set_memory_decrypted(
+				(unsigned long)hv_cpu->synic_message_page, 1);
+			BUG_ON(ret);
 
-		BUG_ON(set_memory_decrypted((unsigned long)hv_cpu->synic_event_page, 1) != 0);
+			ret = set_memory_decrypted(
+				(unsigned long)hv_cpu->synic_event_page, 1);
+			BUG_ON(ret);
 
-		BUG_ON(set_memory_decrypted((unsigned long)hv_cpu->post_msg_page, 1) != 0);
-
-		memset(hv_cpu->synic_message_page, 0, PAGE_SIZE);
-		memset(hv_cpu->synic_event_page, 0, PAGE_SIZE);
-		memset(hv_cpu->post_msg_page, 0, PAGE_SIZE);
+			ret = set_memory_decrypted(
+				(unsigned long)hv_cpu->post_msg_page, 1);
+			BUG_ON(ret);
+		}
 	}
 
 	return 0;
