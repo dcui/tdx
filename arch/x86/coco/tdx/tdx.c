@@ -5,6 +5,7 @@
 #define pr_fmt(fmt)     "tdx: " fmt
 
 #include <linux/cpufeature.h>
+#include <linux/mm.h>
 #include <asm/coco.h>
 #include <asm/tdx.h>
 #include <asm/vmx.h>
@@ -717,7 +718,8 @@ static bool try_accept_one(phys_addr_t *start, unsigned long len,
  * the VMM or private to the guest.  The VMM is expected to change its mapping
  * of the page in response.
  */
-static bool tdx_enc_status_changed(unsigned long vaddr, int numpages, bool enc)
+static bool tdx_enc_status_changed_for_contiguous_pages(unsigned long vaddr,
+							int numpages, bool enc)
 {
 	phys_addr_t start = __pa(vaddr);
 	phys_addr_t end   = __pa(vaddr + numpages * PAGE_SIZE);
@@ -791,6 +793,42 @@ static bool tdx_enc_status_changed(unsigned long vaddr, int numpages, bool enc)
 	}
 
 	return true;
+}
+
+static bool tdx_enc_status_changed_for_vmalloc(unsigned long vaddr,
+					       int numpages, bool enc)
+{
+	void *start_va = (void *)vaddr;
+	void *end_va = start_va + numpages * PAGE_SIZE;
+	phys_addr_t pa;
+
+	if (offset_in_page(vaddr) != 0)
+		return false;
+
+	while (start_va < end_va) {
+		pa = slow_virt_to_phys(start_va);
+		if (!enc)
+			pa |= cc_mkdec(0);
+
+		if (_tdx_hypercall(TDVMCALL_MAP_GPA, pa, PAGE_SIZE, 0, 0))
+			return false;
+
+		/* private->shared conversion requires only MapGPA call */
+		if (enc && !try_accept_one(&pa, PAGE_SIZE, PG_LEVEL_4K))
+			return false;
+
+		start_va += PAGE_SIZE;
+	}
+
+	return true;
+}
+
+static bool tdx_enc_status_changed(unsigned long vaddr, int numpages, bool enc)
+{
+	if (is_vmalloc_addr((void *)vaddr))
+		return tdx_enc_status_changed_for_vmalloc(vaddr, numpages, enc);
+
+	return tdx_enc_status_changed_for_contiguous_pages(vaddr, numpages, enc);
 }
 
 void __init tdx_early_init(void)
