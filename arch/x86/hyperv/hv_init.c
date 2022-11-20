@@ -76,8 +76,8 @@ static int hyperv_init_ghcb(void)
 
 static int hv_cpu_init(unsigned int cpu)
 {
-	union hv_vp_assist_msr_contents msr = { 0 };
-	struct hv_vp_assist_page **hvp = &hv_vp_assist_page[smp_processor_id()];
+	//union hv_vp_assist_msr_contents msr = { 0 };
+	//struct hv_vp_assist_page **hvp = &hv_vp_assist_page[smp_processor_id()];
 	int ret;
 
 	ret = hv_common_cpu_init(cpu);
@@ -393,7 +393,7 @@ static void __init hv_get_partition_id(void)
 void __init hyperv_init(void)
 {
 	u64 guest_id;
-	//union hv_x64_msr_hypercall_contents hypercall_msr;
+	union hv_x64_msr_hypercall_contents hypercall_msr;
 	int cpuhp;
 
 	if (x86_hyper_type != X86_HYPER_MS_HYPERV)
@@ -438,7 +438,9 @@ void __init hyperv_init(void)
 	/* Hyper-V requires to write guest os id via ghcb in SNP IVM. */
 	hv_ghcb_msr_write(HV_X64_MSR_GUEST_OS_ID, guest_id);
 
-#if 0
+	if (cpu_feature_enabled(X86_FEATURE_TDX_GUEST))
+		goto skip_hypercall_pg_init;
+
 	hv_hypercall_pg = __vmalloc_node_range(PAGE_SIZE, 1, VMALLOC_START,
 			VMALLOC_END, GFP_KERNEL, PAGE_KERNEL_ROX,
 			VM_FLUSH_RESET_PERMS, NUMA_NO_NODE,
@@ -477,8 +479,7 @@ void __init hyperv_init(void)
 		hypercall_msr.guest_physical_address = vmalloc_to_pfn(hv_hypercall_pg);
 		wrmsrl(HV_X64_MSR_HYPERCALL, hypercall_msr.as_uint64);
 	}
-#endif
-
+skip_hypercall_pg_init:
 	/*
 	 * hyperv_init() is called before LAPIC is initialized: see
 	 * apic_intr_mode_init() -> x86_platform.apic_post_init() and
@@ -520,14 +521,13 @@ void __init hyperv_init(void)
 	 * space. Map function doesn't work in the early place and so
 	 * call swiotlb_update_mem_attributes() here.
 	 */
-
 	if (hv_is_isolation_supported())
 		swiotlb_update_mem_attributes();
 #endif
 
 	return;
 
-//clean_guest_os_id:
+clean_guest_os_id:
 	wrmsrl(HV_X64_MSR_GUEST_OS_ID, 0);
 	hv_ghcb_msr_write(HV_X64_MSR_GUEST_OS_ID, 0);
 	cpuhp_remove_state(cpuhp);
@@ -606,7 +606,6 @@ EXPORT_SYMBOL_GPL(hyperv_report_panic);
 
 bool hv_is_hyperv_initialized(void)
 {
-#if 0
 	union hv_x64_msr_hypercall_contents hypercall_msr;
 
 	/*
@@ -616,6 +615,9 @@ bool hv_is_hyperv_initialized(void)
 	if (x86_hyper_type != X86_HYPER_MS_HYPERV)
 		return false;
 
+	/* A TDX guest uses the GHCI call rather than hv_hypercall_pg. */
+	if (cpu_feature_enabled(X86_FEATURE_TDX_GUEST))
+		return true;
 	/*
 	 * Verify that earlier initialization succeeded by checking
 	 * that the hypercall page is setup
@@ -624,8 +626,5 @@ bool hv_is_hyperv_initialized(void)
 	rdmsrl(HV_X64_MSR_HYPERCALL, hypercall_msr.as_uint64);
 
 	return hypercall_msr.enable;
-#else
-	return true;
-#endif
 }
 EXPORT_SYMBOL_GPL(hv_is_hyperv_initialized);
