@@ -1538,7 +1538,7 @@ static int vmbus_bus_init(void)
 	 * Only register if the crash MSRs are available
 	 */
 	if (ms_hyperv.misc_features & HV_FEATURE_GUEST_CRASH_MSR_AVAILABLE) {
-		u64 hyperv_crash_ctl = 0;
+		u64 hyperv_crash_ctl;
 		/*
 		 * Panic message recording (sysctl_record_panic_msg)
 		 * is enabled by default in non-isolated guests and
@@ -1554,7 +1554,8 @@ static int vmbus_bus_init(void)
 		 * Register for panic kmsg callback only if the right
 		 * capability is supported by the hypervisor.
 		 */
-		//hyperv_crash_ctl = hv_get_register(HV_REGISTER_CRASH_CTL);
+		hyperv_crash_ctl = hv_get_register(HV_REGISTER_CRASH_CTL);
+		if (hyperv_crash_ctl & HV_CRASH_CTL_CRASH_NOTIFY_MSG)
 			hv_kmsg_dump_register();
 
 		register_die_notifier(&hyperv_die_report_block);

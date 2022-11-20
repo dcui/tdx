@@ -588,7 +588,7 @@ void hyperv_report_panic(struct pt_regs *regs, long err, bool in_die)
 	 * registers to report, but if we miss it (e.g. on BUG()) we need
 	 * to report it on 'panic'.
 	 */
-	if (0 && panic_reported)
+	if (panic_reported)
 		return;
 	panic_reported = true;
 
