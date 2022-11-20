@@ -399,17 +399,16 @@ void __init hyperv_init(void)
 	if (hv_common_init())
 		return;
 
-	if (cpu_feature_enabled(X86_FEATURE_TDX_GUEST))
+	if (hv_isolation_type_tdx())
 		hv_vp_assist_page = NULL;
 	else
-
 		hv_vp_assist_page = kcalloc(num_possible_cpus(),
 					    sizeof(*hv_vp_assist_page),
 					    GFP_KERNEL);
 	if (!hv_vp_assist_page) {
 		ms_hyperv.hints &= ~HV_X64_ENLIGHTENED_VMCS_RECOMMENDED;
 
-		if (!cpu_feature_enabled(X86_FEATURE_TDX_GUEST))
+		if (!hv_isolation_type_tdx())
 			goto common_free;
 	}
 
@@ -440,7 +439,7 @@ void __init hyperv_init(void)
 	/* Hyper-V requires to write guest os id via ghcb in SNP IVM. */
 	hv_ghcb_msr_write(HV_X64_MSR_GUEST_OS_ID, guest_id);
 
-	if (cpu_feature_enabled(X86_FEATURE_TDX_GUEST))
+	if (hv_isolation_type_tdx())
 		goto skip_hypercall_pg_init;
 
 	hv_hypercall_pg = __vmalloc_node_range(PAGE_SIZE, 1, VMALLOC_START,
@@ -619,7 +618,7 @@ bool hv_is_hyperv_initialized(void)
 		return false;
 
 	/* A TDX guest uses the GHCI call rather than hv_hypercall_pg. */
-	if (cpu_feature_enabled(X86_FEATURE_TDX_GUEST))
+	if (hv_isolation_type_tdx())
 		return true;
 	/*
 	 * Verify that earlier initialization succeeded by checking

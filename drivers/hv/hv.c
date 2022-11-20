@@ -172,7 +172,7 @@ int hv_synic_alloc(void)
 		}
 
 
-		if (cpu_feature_enabled(X86_FEATURE_TDX_GUEST)) {
+		if (hv_isolation_type_tdx()) {
 			ret = set_memory_decrypted(
 				(unsigned long)hv_cpu->synic_message_page, 1);
 			BUG_ON(ret);
@@ -243,7 +243,7 @@ void hv_synic_enable_regs(unsigned int cpu)
 		simp.base_simp_gpa = virt_to_phys(hv_cpu->synic_message_page)
 			>> HV_HYP_PAGE_SHIFT;
 
-		if (cpu_feature_enabled(X86_FEATURE_TDX_GUEST))
+		if (hv_isolation_type_tdx())
 			simp.base_simp_gpa += ms_hyperv.shared_gpa_boundary
 				>> HV_HYP_PAGE_SHIFT;
 	}
@@ -265,7 +265,7 @@ void hv_synic_enable_regs(unsigned int cpu)
 		siefp.base_siefp_gpa = virt_to_phys(hv_cpu->synic_event_page)
 			>> HV_HYP_PAGE_SHIFT;
 
-		if (cpu_feature_enabled(X86_FEATURE_TDX_GUEST))
+		if (hv_isolation_type_tdx())
 			siefp.base_siefp_gpa += ms_hyperv.shared_gpa_boundary
 				>> HV_HYP_PAGE_SHIFT;
 	}

@@ -345,7 +345,10 @@ static void __init ms_hyperv_init_platform(void)
 			case HV_ISOLATION_TYPE_SNP:
 				cc_set_vendor(CC_VENDOR_HYPERV);
 				break;
+
 			case HV_ISOLATION_TYPE_TDX:
+				static_branch_enable(&isolation_type_tdx);
+
 				cc_set_vendor(CC_VENDOR_INTEL);
 
 				ms_hyperv.shared_gpa_boundary = cc_mkdec(0);
@@ -358,6 +361,7 @@ static void __init ms_hyperv_init_platform(void)
 				ms_hyperv.misc_features &=
 					~HV_FEATURE_GUEST_CRASH_MSR_AVAILABLE;
 				break;
+
 			default:
 				break;
 			}
