@@ -5,6 +5,7 @@
 #include <linux/types.h>
 #include <linux/nmi.h>
 #include <linux/msi.h>
+#include <asm-generic/mshyperv_info.h>
 #include <asm/io.h>
 #include <asm/hyperv-tlfs.h>
 #include <asm/nospec-branch.h>
@@ -48,6 +49,18 @@ static inline u64 hv_do_hypercall(u64 control, void *input, void *output)
 	u64 hv_status;
 
 #ifdef CONFIG_X86_64
+#if CONFIG_INTEL_TDX_GUEST
+	if (hv_isolation_type_tdx()) {
+		if (input_address)
+			input_address += ms_hyperv.shared_gpa_boundary;
+
+		if (output_address)
+			output_address += ms_hyperv.shared_gpa_boundary;
+
+		return __tdx_ms_hv_hypercall(control, output_address,
+					     input_address);
+	}
+#endif
 	if (!hv_hypercall_pg)
 		return U64_MAX;
 
@@ -85,6 +98,11 @@ static inline u64 hv_do_fast_hypercall8(u16 code, u64 input1)
 	u64 hv_status, control = (u64)code | HV_HYPERCALL_FAST_BIT;
 
 #ifdef CONFIG_X86_64
+#if CONFIG_INTEL_TDX_GUEST
+	if (hv_isolation_type_tdx())
+		return __tdx_ms_hv_hypercall(control, 0, input1);
+#endif
+
 	{
 		__asm__ __volatile__(CALL_NOSPEC
 				     : "=a" (hv_status), ASM_CALL_CONSTRAINT,
@@ -116,6 +134,11 @@ static inline u64 hv_do_fast_hypercall16(u16 code, u64 input1, u64 input2)
 	u64 hv_status, control = (u64)code | HV_HYPERCALL_FAST_BIT;
 
 #ifdef CONFIG_X86_64
+#if CONFIG_INTEL_TDX_GUEST
+	if (hv_isolation_type_tdx())
+		return __tdx_ms_hv_hypercall(control, input2, input1);
+#endif
+
 	{
 		__asm__ __volatile__("mov %4, %%r8\n"
 				     CALL_NOSPEC
