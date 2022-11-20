@@ -34,6 +34,8 @@ extern u64 hv_current_partition_id;
 
 extern union hv_ghcb * __percpu *hv_ghcb_pg;
 
+extern bool hv_isolation_type_tdx(void);
+
 int hv_call_deposit_pages(int node, u64 partition_id, u32 num_pages);
 int hv_call_add_logical_proc(int node, u32 lp_index, u32 acpi_id);
 int hv_call_create_vp(int node, u64 partition_id, u32 vp_index, u32 flags);
@@ -48,7 +50,7 @@ static inline u64 hv_do_hypercall(u64 control, void *input, void *output)
 
 #ifdef CONFIG_X86_64
 #if CONFIG_INTEL_TDX_GUEST
-	if (cpu_feature_enabled(X86_FEATURE_TDX_GUEST)) {
+	if (hv_isolation_type_tdx()) {
 		if (input_address)
 			input_address += ms_hyperv.shared_gpa_boundary;
 
@@ -97,7 +99,7 @@ static inline u64 hv_do_fast_hypercall8(u16 code, u64 input1)
 
 #ifdef CONFIG_X86_64
 #if CONFIG_INTEL_TDX_GUEST
-	if (cpu_feature_enabled(X86_FEATURE_TDX_GUEST))
+	if (hv_isolation_type_tdx())
 		return __tdx_ms_hv_hypercall(control, 0, input1);
 #endif
 
@@ -133,7 +135,7 @@ static inline u64 hv_do_fast_hypercall16(u16 code, u64 input1, u64 input2)
 
 #ifdef CONFIG_X86_64
 #if CONFIG_INTEL_TDX_GUEST
-	if (cpu_feature_enabled(X86_FEATURE_TDX_GUEST))
+	if (hv_isolation_type_tdx())
 		return __tdx_ms_hv_hypercall(control, input2, input1);
 #endif
 
@@ -215,7 +217,6 @@ static inline void hv_ghcb_terminate(unsigned int set, unsigned int reason) {}
 #endif
 
 extern bool hv_isolation_type_snp(void);
-extern bool hv_isolation_type_tdx(void);
 
 static inline bool hv_is_synic_reg(unsigned int reg)
 {
