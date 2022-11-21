@@ -248,12 +248,16 @@ void __init swiotlb_update_mem_attributes(void)
 	struct io_tlb_mem *mem = &io_tlb_default_mem;
 	void *vaddr;
 	unsigned long bytes;
+	int rc;
 
 	if (!mem->nslabs || mem->late_alloc)
 		return;
 	vaddr = phys_to_virt(mem->start);
 	bytes = PAGE_ALIGN(mem->nslabs << IO_TLB_SHIFT);
-	set_memory_decrypted((unsigned long)vaddr, bytes >> PAGE_SHIFT);
+
+	rc = set_memory_decrypted((unsigned long)vaddr, bytes >> PAGE_SHIFT);
+	if (rc)
+		panic("Failed to decrypt swiotlb bounce buffers (%d)\n", rc);
 
 	mem->vaddr = swiotlb_mem_remap(mem, bytes);
 	if (!mem->vaddr)
@@ -447,8 +451,10 @@ retry:
 	if (!mem->slots)
 		goto error_slots;
 
-	set_memory_decrypted((unsigned long)vstart,
-			     (nslabs << IO_TLB_SHIFT) >> PAGE_SHIFT);
+	rc = set_memory_decrypted((unsigned long)vstart,
+				  (nslabs << IO_TLB_SHIFT) >> PAGE_SHIFT);
+	WARN(rc, "Failed to decrypt swiotlb bounce buffers (%d)\n", rc);
+
 	swiotlb_init_io_tlb_mem(mem, virt_to_phys(vstart), nslabs, 0, true,
 				default_nareas);
 
@@ -986,6 +992,7 @@ static int rmem_swiotlb_device_init(struct reserved_mem *rmem,
 
 	/* Set Per-device io tlb area to one */
 	unsigned int nareas = 1;
+	int rc = -ENOMEM;
 
 	/*
 	 * Since multiple devices can share the same pool, the private data,
@@ -998,21 +1005,22 @@ static int rmem_swiotlb_device_init(struct reserved_mem *rmem,
 			return -ENOMEM;
 
 		mem->slots = kcalloc(nslabs, sizeof(*mem->slots), GFP_KERNEL);
-		if (!mem->slots) {
-			kfree(mem);
-			return -ENOMEM;
-		}
+		if (!mem->slots)
+			goto free_mem;
 
 		mem->areas = kcalloc(nareas, sizeof(*mem->areas),
 				GFP_KERNEL);
-		if (!mem->areas) {
-			kfree(mem->slots);
-			kfree(mem);
-			return -ENOMEM;
+		if (!mem->areas)
+			goto free_slots;
+
+		rc = set_memory_decrypted(
+				(unsigned long)phys_to_virt(rmem->base),
+				rmem->size >> PAGE_SHIFT);
+		if (rc) {
+			pr_err("Failed to decrypt rmem buffer (%d)\n", rc);
+			goto free_areas;
 		}
 
-		set_memory_decrypted((unsigned long)phys_to_virt(rmem->base),
-				     rmem->size >> PAGE_SHIFT);
 		swiotlb_init_io_tlb_mem(mem, rmem->base, nslabs, SWIOTLB_FORCE,
 					false, nareas);
 		mem->for_alloc = true;
@@ -1025,6 +1033,14 @@ static int rmem_swiotlb_device_init(struct reserved_mem *rmem,
 	dev->dma_io_tlb_mem = mem;
 
 	return 0;
+
+free_areas:
+	kfree(mem->areas);
+free_slots:
+	kfree(mem->slots);
+free_mem:
+	kfree(mem);
+	return rc;
 }
 
 static void rmem_swiotlb_device_release(struct reserved_mem *rmem,
