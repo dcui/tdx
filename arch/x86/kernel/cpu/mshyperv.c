@@ -349,6 +349,8 @@ static void __init ms_hyperv_init_platform(void)
 
 			case HV_ISOLATION_TYPE_TDX:
 				static_branch_enable(&isolation_type_tdx);
+
+				ms_hyperv.shared_gpa_boundary = cc_mkdec(0);
 				break;
 
 			default:
