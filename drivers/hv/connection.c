@@ -250,12 +250,14 @@ int vmbus_connect(void)
 		 * Isolation VM with AMD SNP needs to access monitor page via
 		 * address space above shared gpa boundary.
 		 */
-		if (hv_isolation_type_snp()) {
+		if (hv_isolation_type_snp() || hv_isolation_type_tdx()) {
 			vmbus_connection.monitor_pages_pa[0] +=
 				ms_hyperv.shared_gpa_boundary;
 			vmbus_connection.monitor_pages_pa[1] +=
 				ms_hyperv.shared_gpa_boundary;
+		}
 
+		if (hv_isolation_type_snp()) {
 			vmbus_connection.monitor_pages[0]
 				= memremap(vmbus_connection.monitor_pages_pa[0],
 					   HV_HYP_PAGE_SIZE,
