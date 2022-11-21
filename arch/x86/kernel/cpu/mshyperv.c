@@ -350,7 +350,20 @@ static void __init ms_hyperv_init_platform(void)
 			case HV_ISOLATION_TYPE_TDX:
 				static_branch_enable(&isolation_type_tdx);
 
+				/*
+				 * tdx_early_init() has called
+				 * cc_set_vendor(CC_VENDOR_INTEL).
+				 */
+
 				ms_hyperv.shared_gpa_boundary = cc_mkdec(0);
+
+				/* Don't use the unsafe Hyper-V TSC page */
+				ms_hyperv.features &=
+					~HV_MSR_REFERENCE_TSC_AVAILABLE;
+
+				/* HV_REGISTER_CRASH_CTL is unsupported */
+				ms_hyperv.misc_features &=
+					~HV_FEATURE_GUEST_CRASH_MSR_AVAILABLE;
 				break;
 
 			default:
