@@ -276,6 +276,27 @@ bool hv_isolation_type_tdx(void)
 {
 	return static_branch_unlikely(&isolation_type_tdx);
 }
+
+u64 hv_tdx_hypercall(u64 control, u64 input_addr, u64 output_addr)
+{
+	struct tdx_hypercall_args args = { };
+
+	if (!(control & HV_HYPERCALL_FAST_BIT)) {
+		if (input_addr)
+			input_addr += ms_hyperv.shared_gpa_boundary;
+
+		if (output_addr)
+			output_addr += ms_hyperv.shared_gpa_boundary;
+	}
+
+	args.r10 = control;
+	args.rdx = input_addr;
+	args.r8  = output_addr;
+
+	(void)__tdx_hypercall(&args, TDX_HCALL_HAS_OUTPUT);
+
+	return args.r11;
+}
 #endif
 
 /*
