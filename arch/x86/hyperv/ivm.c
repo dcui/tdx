@@ -235,6 +235,15 @@ void hv_ghcb_msr_read(u64 msr, u64 *value)
 }
 EXPORT_SYMBOL_GPL(hv_ghcb_msr_read);
 
+#ifdef CONFIG_INTEL_TDX_GUEST
+DEFINE_STATIC_KEY_FALSE(isolation_type_tdx);
+
+bool hv_isolation_type_tdx(void)
+{
+	return static_branch_unlikely(&isolation_type_tdx);
+}
+#endif
+
 /*
  * hv_mark_gpa_visibility - Set pages visible to host via hvcall.
  *
