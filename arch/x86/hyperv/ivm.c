@@ -289,7 +289,14 @@ u64 hv_tdx_hypercall(u64 control, u64 param1, u64 param2)
 	args.r10 = control;
 	args.rdx = param1;
 	args.r8  = param2;
+#define TDVMCALL_VENDOR_HYPERV          0x9000000000000012
 
+	if (ms_hyperv.shared_gpa_boundary != 0) {
+		args.r10 = control;
+	} else {
+		args.r9  = control;
+		args.r10 = TDVMCALL_VENDOR_HYPERV;
+	}
 	(void)__tdx_hypercall(&args, TDX_HCALL_HAS_OUTPUT);
 
 	return args.r11;

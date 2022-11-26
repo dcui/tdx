@@ -478,6 +478,7 @@ bool __init get_mtrr_state(void)
 	rdmsr(MSR_MTRRdefType, lo, dummy);
 	mtrr_state.def_type = (lo & 0xff);
 	mtrr_state.enabled = (lo & 0xc00) >> 10;
+	mtrr_state.enabled = 0;
 
 	if (amd_special_default_mtrr()) {
 		unsigned low, high;
