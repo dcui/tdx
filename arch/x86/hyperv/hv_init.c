@@ -509,8 +509,11 @@ void __init hyperv_init(void)
 	 * Swiotlb bounce buffer needs to be mapped in extra address
 	 * space. Map function doesn't work in the early place and so
 	 * call swiotlb_update_mem_attributes() here.
+	 *
+	 *  Refer to mem_encrypt_init(), which runs before hyperv_init().
 	 */
-	if (hv_is_isolation_supported())
+	if (hv_is_isolation_supported() &&
+	    !cc_platform_has(CC_ATTR_MEM_ENCRYPT))
 		swiotlb_update_mem_attributes();
 #endif
 
