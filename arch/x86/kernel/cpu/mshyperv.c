@@ -278,6 +278,7 @@ static void __init ms_hyperv_init_platform(void)
 	pr_info("Hyper-V: privilege flags low 0x%x, high 0x%x, hints 0x%x, misc 0x%x\n",
 		ms_hyperv.features, ms_hyperv.priv_high, ms_hyperv.hints,
 		ms_hyperv.misc_features);
+	ms_hyperv.priv_high |= HV_ISOLATION;
 
 	ms_hyperv.max_vp_index = cpuid_eax(HYPERV_CPUID_IMPLEMENT_LIMITS);
 	ms_hyperv.max_lp_index = cpuid_ebx(HYPERV_CPUID_IMPLEMENT_LIMITS);
@@ -331,6 +332,8 @@ static void __init ms_hyperv_init_platform(void)
 		pr_info("Hyper-V: Isolation Config: Group A 0x%x, Group B 0x%x\n",
 			ms_hyperv.isolation_config_a, ms_hyperv.isolation_config_b);
 
+		ms_hyperv.cvm_type = HV_ISOLATION_TYPE_TDX;
+
 		if (hv_get_isolation_type() == HV_ISOLATION_TYPE_SNP) {
 			static_branch_enable(&isolation_type_snp);
 #ifdef CONFIG_SWIOTLB
@@ -355,7 +358,7 @@ static void __init ms_hyperv_init_platform(void)
 				 * cc_set_vendor(CC_VENDOR_INTEL).
 				 */
 
-				ms_hyperv.shared_gpa_boundary = cc_mkdec(0);
+				ms_hyperv.shared_gpa_boundary = 0; //cc_mkdec(0);
 
 				/* Don't use the unsafe Hyper-V TSC page */
 				ms_hyperv.features &=

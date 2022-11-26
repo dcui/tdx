@@ -156,7 +156,8 @@ SYM_FUNC_START(__tdx_hypercall)
 	/* Set TDCALL leaf ID (TDVMCALL (0)) in RAX */
 	xor %eax, %eax
 
-	movl $TDVMCALL_EXPOSE_REGS_MASK, %ecx
+	/* movl $TDVMCALL_EXPOSE_REGS_MASK, %ecx */
+	movl $0xFFFFFFEC, %ecx
 
 	/*
 	 * For the idle loop STI needs to be called directly before the TDCALL

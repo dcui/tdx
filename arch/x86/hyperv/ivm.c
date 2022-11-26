@@ -289,7 +289,14 @@ u64 hv_tdx_hypercall(u64 control, u64 input_addr, u64 output_addr)
 			output_addr += ms_hyperv.shared_gpa_boundary;
 	}
 
-	args.r10 = control;
+#define TDVMCALL_VENDOR_HYPERV          0x9000000000000012
+
+	if (ms_hyperv.shared_gpa_boundary != 0) {
+		args.r10 = control;
+	} else {
+		args.r9  = control;
+		args.r10 = TDVMCALL_VENDOR_HYPERV;
+	}
 	args.rdx = input_addr;
 	args.r8  = output_addr;
 
