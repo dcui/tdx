@@ -105,8 +105,8 @@ int vmbus_negotiate_version(struct vmbus_channel_msginfo *msginfo, u32 version)
 	}
 
 	/*
-	 * shared_gpa_boundary is zero in non-SNP VMs, so it's safe to always
-	 * do the add
+	 * shared_gpa_boundary is zero in non-SNP and non-TDX VMs, so it's safe
+	 * to always do the add.
 	 */
 	msg->monitor_page1 = virt_to_phys(vmbus_connection.monitor_pages[0]) +
 				ms_hyperv.shared_gpa_boundary;

@@ -18,6 +18,7 @@
 #include <linux/clockchips.h>
 #include <linux/delay.h>
 #include <linux/interrupt.h>
+#include <linux/set_memory.h>
 #include <clocksource/hyperv_timer.h>
 #include <asm/mshyperv.h>
 #include "hyperv_vmbus.h"
@@ -119,6 +120,7 @@ int hv_synic_alloc(void)
 {
 	int cpu;
 	struct hv_per_cpu_context *hv_cpu;
+	int ret;
 
 	/*
 	 * First, zero all per-cpu memory areas so hv_synic_free() can
@@ -168,6 +170,21 @@ int hv_synic_alloc(void)
 			pr_err("Unable to allocate post msg page\n");
 			goto err;
 		}
+
+
+		if (hv_isolation_type_tdx()) {
+			ret = set_memory_decrypted(
+				(unsigned long)hv_cpu->synic_message_page, 1);
+			BUG_ON(ret);
+
+			ret = set_memory_decrypted(
+				(unsigned long)hv_cpu->synic_event_page, 1);
+			BUG_ON(ret);
+
+			ret = set_memory_decrypted(
+				(unsigned long)hv_cpu->post_msg_page, 1);
+			BUG_ON(ret);
+		}
 	}
 
 	return 0;
@@ -182,11 +199,28 @@ err:
 
 void hv_synic_free(void)
 {
-	int cpu;
+	int cpu, ret;
 
 	for_each_present_cpu(cpu) {
 		struct hv_per_cpu_context *hv_cpu
 			= per_cpu_ptr(hv_context.cpu_context, cpu);
+
+		if (hv_isolation_type_tdx()) {
+			ret = set_memory_encrypted(
+				(unsigned long)hv_cpu->synic_message_page, 1);
+			if (WARN_ON(ret))
+				continue;
+
+			ret = set_memory_encrypted(
+				(unsigned long)hv_cpu->synic_event_page, 1);
+			if (WARN_ON(ret))
+				continue;
+
+			ret = set_memory_encrypted(
+				(unsigned long)hv_cpu->post_msg_page, 1);
+			if (WARN_ON(ret))
+				continue;
+		}
 
 		free_page((unsigned long)hv_cpu->synic_event_page);
 		free_page((unsigned long)hv_cpu->synic_message_page);
@@ -227,6 +261,8 @@ void hv_synic_enable_regs(unsigned int cpu)
 	} else {
 		simp.base_simp_gpa = virt_to_phys(hv_cpu->synic_message_page)
 			>> HV_HYP_PAGE_SHIFT;
+		simp.base_simp_gpa |= ms_hyperv.shared_gpa_boundary
+			>> HV_HYP_PAGE_SHIFT;
 	}
 
 	hv_set_register(HV_REGISTER_SIMP, simp.as_uint64);
@@ -245,6 +281,8 @@ void hv_synic_enable_regs(unsigned int cpu)
 			pr_err("Fail to map synic event page.\n");
 	} else {
 		siefp.base_siefp_gpa = virt_to_phys(hv_cpu->synic_event_page)
+			>> HV_HYP_PAGE_SHIFT;
+		siefp.base_siefp_gpa |= ms_hyperv.shared_gpa_boundary
 			>> HV_HYP_PAGE_SHIFT;
 	}
 
