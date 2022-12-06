@@ -262,6 +262,12 @@ bool __weak hv_is_isolation_supported(void)
 }
 EXPORT_SYMBOL_GPL(hv_is_isolation_supported);
 
+bool __weak hv_set_memory_enc_dec_needed(void)
+{
+	return false;
+}
+EXPORT_SYMBOL_GPL(hv_set_memory_enc_dec_needed);
+
 bool __weak hv_isolation_type_snp(void)
 {
 	return false;
