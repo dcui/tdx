@@ -269,6 +269,15 @@ bool hv_isolation_type_snp(void)
 	return static_branch_unlikely(&isolation_type_snp);
 }
 
+#ifdef CONFIG_INTEL_TDX_GUEST
+DEFINE_STATIC_KEY_FALSE(isolation_type_tdx);
+
+bool hv_isolation_type_tdx(void)
+{
+	return static_branch_unlikely(&isolation_type_tdx);
+}
+#endif
+
 /*
  * hv_mark_gpa_visibility - Set pages visible to host via hvcall.
  *

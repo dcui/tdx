@@ -342,9 +342,14 @@ static void __init ms_hyperv_init_platform(void)
 #endif
 		/* Isolation VMs are unenlightened SEV-based VMs, thus this check: */
 		if (IS_ENABLED(CONFIG_AMD_MEM_ENCRYPT)) {
-			if (hv_get_isolation_type() != HV_ISOLATION_TYPE_NONE)
+			if (hv_get_isolation_type() == HV_ISOLATION_TYPE_VBS ||
+			    hv_get_isolation_type() == HV_ISOLATION_TYPE_SNP)
 				cc_set_vendor(CC_VENDOR_HYPERV);
 		}
+
+		if (IS_ENABLED(CONFIG_INTEL_TDX_GUEST) &&
+		    hv_get_isolation_type() == HV_ISOLATION_TYPE_TDX)
+			static_branch_enable(&isolation_type_tdx);
 	}
 
 	if (hv_max_functions_eax >= HYPERV_CPUID_NESTED_FEATURES) {
