@@ -253,6 +253,26 @@ static void __init hv_smp_prepare_cpus(unsigned int max_cpus)
 }
 #endif
 
+/*
+ * When a TDX guest runs on Hyper-V, the firmware sets the HW_REDUCED flag: see
+ * acpi_tb_create_local_fadt(). Consequently ttyS0 interrupts can't work because
+ * request_irq() -> ... -> irq_to_desc() returns NULL for ttyS0. This happens
+ * because mp_config_acpi_legacy_irqs() sees a nr_legacy_irqs() of 0, so it
+ * doesn't initialize the array 'mp_irqs[]', and later setup_IO_APIC_irqs() ->
+ * find_irq_entry() fails to find the legacy irqs from the array, and hence
+ * doesn't create the necessary irq description info.
+ *
+ * Copy arch/x86/kernel/acpi/boot.c: acpi_generic_reduced_hw_init() but doesn't
+ * change 'legacy_pic', so it keeps its default value 'default_legacy_pic' in
+ * mp_config_acpi_legacy_irqs(), which sees a non-zero nr_legacy_irqs(), and
+ * eventually serial console interrupts can work properly.
+ */
+static void __init reduced_hw_init(void)
+{
+	x86_init.timers.timer_init	= x86_init_noop;
+	x86_init.irqs.pre_vector_init	= x86_init_noop;
+}
+
 static void __init ms_hyperv_init_platform(void)
 {
 	int hv_max_functions_eax;
@@ -364,6 +384,8 @@ static void __init ms_hyperv_init_platform(void)
 			/* HV_REGISTER_CRASH_CTL is unsupported */
 			ms_hyperv.misc_features &=
 				 ~HV_FEATURE_GUEST_CRASH_MSR_AVAILABLE;
+
+			x86_init.acpi.reduced_hw_early_init = reduced_hw_init;
 		}
 	}
 
