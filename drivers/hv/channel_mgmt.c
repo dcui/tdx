@@ -997,7 +997,10 @@ static bool vmbus_is_valid_device(const guid_t *guid)
 		return true;
 
 	if (memcmp(&guid->b[4], &srv_id_template.b[4], sizeof(guid_t) - 4) == 0) {
+		/*
+		 * do no print these message to the hypervisor
 		printk("%s:%d (%s): vsock!\n", __FILE__, __LINE__, __func__);
+		*/
 		return true;
 	}
 
