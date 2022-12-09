@@ -11,7 +11,6 @@
 #include <linux/cc_platform.h>
 
 #include <asm/coco.h>
-#include <asm/mshyperv.h>
 #include <asm/processor.h>
 
 static enum cc_vendor vendor __ro_after_init;
@@ -84,9 +83,6 @@ static bool hyperv_cc_platform_has(enum cc_attr attr)
 
 bool cc_platform_has(enum cc_attr attr)
 {
-	if (hv_is_isolation_supported())
-		return hyperv_cc_platform_has(attr);
-
 	switch (vendor) {
 	case CC_VENDOR_AMD:
 		return amd_cc_platform_has(attr);
@@ -97,8 +93,6 @@ bool cc_platform_has(enum cc_attr attr)
 	default:
 		return false;
 	}
-
-	return false;
 }
 EXPORT_SYMBOL_GPL(cc_platform_has);
 
