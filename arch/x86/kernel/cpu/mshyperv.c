@@ -348,8 +348,23 @@ static void __init ms_hyperv_init_platform(void)
 		}
 
 		if (IS_ENABLED(CONFIG_INTEL_TDX_GUEST) &&
-		    hv_get_isolation_type() == HV_ISOLATION_TYPE_TDX)
+		    hv_get_isolation_type() == HV_ISOLATION_TYPE_TDX) {
 			static_branch_enable(&isolation_type_tdx);
+
+			/*
+			 * The GPAs of SynIC Event/Message pages and VMBus
+			 * Moniter pages need to be added by this offset.
+			 */
+			ms_hyperv.shared_gpa_boundary = cc_mkdec(0);
+
+			/* Don't use the unsafe Hyper-V TSC page */
+			ms_hyperv.features &=
+				~HV_MSR_REFERENCE_TSC_AVAILABLE;
+
+			/* HV_REGISTER_CRASH_CTL is unsupported */
+			ms_hyperv.misc_features &=
+				 ~HV_FEATURE_GUEST_CRASH_MSR_AVAILABLE;
+		}
 	}
 
 	if (hv_max_functions_eax >= HYPERV_CPUID_NESTED_FEATURES) {
