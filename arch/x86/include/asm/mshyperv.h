@@ -54,9 +54,9 @@ static inline u64 hv_do_hypercall(u64 control, void *input, void *output)
 
 #ifdef CONFIG_X86_64
 	if (hv_isolation_type_tdx())
-		return hv_tdx_hypercall(control,
-					cc_mkdec(input_address),
-					cc_mkdec(output_address));
+		return hv_tdx_hypercall(control, input_address, output_address);
+					//cc_mkdec(input_address),
+					//cc_mkdec(output_address));
 	if (!hv_hypercall_pg)
 		return U64_MAX;
 
