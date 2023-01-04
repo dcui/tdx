@@ -22,6 +22,7 @@
 #include <linux/slab.h>
 #include <asm/hyperv-tlfs.h>
 #include <asm/mshyperv.h>
+#include <linux/set_memory.h>
 
 /*
  * hv_root_partition and ms_hyperv are defined here with other Hyper-V
@@ -130,6 +131,9 @@ int hv_common_cpu_init(unsigned int cpu)
 	*inputarg = kmalloc(pgcount * HV_HYP_PAGE_SIZE, flags);
 	if (!(*inputarg))
 		return -ENOMEM;
+
+	if (hv_isolation_type_snp())
+		BUG_ON(set_memory_decrypted((unsigned long)*inputarg, pgcount) != 0);
 
 	if (hv_root_partition) {
 		outputarg = (void **)this_cpu_ptr(hyperv_pcpu_output_arg);

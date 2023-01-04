@@ -28,7 +28,7 @@
 #include <crypto/aead.h>
 #include <linux/scatterlist.h>
 #include <linux/random.h>
-#include <asm/sev-es.h>
+#include <asm/sev.h>
 
 #define DEVICE_NAME		"sev"
 #define AAD_LEN			48
@@ -147,6 +147,9 @@ static int verify_response_message(int msg_type, int msg_version, int *msg_sz, u
 	hdr = (struct snp_guest_request_msg_hdr *)misc_dev->response;
 	payload = (uint8_t *)misc_dev->response + sizeof(*hdr);
 
+	*(uint64_t *)&crypto->iv[0] = hdr->msg_seqno;
+	*(uint32_t *)&crypto->iv[sizeof(uint64_t)] = 0;
+
 	/* Decrypt the response payload */
 	ret = enc_dec_message(hdr, payload, plaintext, crypto->iv,
 				min_t(size_t, hdr->msg_sz, *msg_sz) + crypto->a_len, false);
@@ -177,7 +180,7 @@ static int expected_buf_sz(int type)
 	case SNP_MSG_REPORT_REQ: return SEV_SNP_REPORT_REQ_BUF_SZ;
 	case SNP_MSG_REPORT_RSP: return SEV_SNP_REPORT_RSP_BUF_SZ;
 	case SNP_MSG_EXPORT_REQ: return SEV_SNP_EXPORT_REQ_BUF_SZ;
-	case SNP_MSG_EXPORT_RSP: return SEV_SNP_REPORT_RSP_BUF_SZ;
+	case SNP_MSG_EXPORT_RSP: return SEV_SNP_EXPORT_RSP_BUF_SZ;
 	case SNP_MSG_IMPORT_REQ: return SEV_SNP_IMPORT_REQ_BUF_SZ;
 	case SNP_MSG_IMPORT_RSP: return SEV_SNP_IMPORT_RSP_BUF_SZ;
 	case SNP_MSG_ABSORB_REQ: return SEV_SNP_ABSORB_REQ_BUF_SZ;

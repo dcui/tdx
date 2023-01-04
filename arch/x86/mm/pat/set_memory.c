@@ -1559,8 +1559,22 @@ repeat:
 		 * Do we really change anything ?
 		 */
 		if (pte_val(old_pte) != pte_val(new_pte)) {
+			/*
+			* To maintain the security gurantees of SEV-SNP guest invalidate the memory before
+			* clearing the encryption attribute.
+			*/
+			if (primary && sev_snp_active() && pgprot_val(cpa->mask_clr) & _PAGE_ENC)
+				BUG_ON(snp_set_memory_shared(address, pfn << PAGE_SHIFT, 1) != 0);
+
 			set_pte_atomic(kpte, new_pte);
 			cpa->flags |= CPA_FLUSHTLB;
+
+			/*
+			* Now that memory is mapped encrypted in the page table, validate the memory range before
+			* we return from here.
+			*/
+			if (primary && sev_snp_active() && pgprot_val(cpa->mask_set) & _PAGE_ENC)
+				BUG_ON(snp_set_memory_private(address, pfn << PAGE_SHIFT, 1) != 0);
 		}
 		cpa->numpages = 1;
 		return 0;
@@ -2001,6 +2015,7 @@ static int __set_memory_enc_dec(unsigned long addr, int numpages, bool enc)
 	cpa.mask_set = enc ? __pgprot(_PAGE_ENC) : __pgprot(0);
 	cpa.mask_clr = enc ? __pgprot(0) : __pgprot(_PAGE_ENC);
 	cpa.pgd = init_mm.pgd;
+	cpa.force_split = 1;
 
 	/* Must avoid aliasing mappings in the highmem code */
 	kmap_flush_unused();
@@ -2011,24 +2026,7 @@ static int __set_memory_enc_dec(unsigned long addr, int numpages, bool enc)
 	 */
 	cpa_flush(&cpa, !this_cpu_has(X86_FEATURE_SME_COHERENT));
 
-	/*
-	 * To maintain the security gurantees of SEV-SNP guest invalidate the memory before
-	 * clearing the encryption attribute.
-	 */
-	if (sev_snp_active() && !enc) {
-		ret = snp_set_memory_shared(addr, numpages);
-		if (ret)
-			return ret;
-	}
-
 	ret = __change_page_attr_set_clr(&cpa, 1);
-
-	/*
-	 * Now that memory is mapped encrypted in the page table, validate the memory range before
-	 * we return from here.
-	 */
-	if (!ret && sev_snp_active() && enc)
-		ret = snp_set_memory_private(addr, numpages);
 
 	/*
 	 * After changing the encryption attribute, we need to flush TLBs again

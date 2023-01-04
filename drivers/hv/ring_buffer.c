@@ -184,34 +184,29 @@ void hv_ringbuffer_pre_init(struct vmbus_channel *channel)
 int hv_ringbuffer_post_init(struct hv_ring_buffer_info *ring_info,
 		       struct page *pages, u32 page_cnt)
 {
-	struct vm_struct *area;
-	u64 physic_addr = page_to_pfn(pages) << PAGE_SHIFT;
-	unsigned long vaddr;
-	int err = 0;
+	int i;
+	struct page **pages_wraparound;
 
 	if (!hv_isolation_type_snp())
 		return 0;
 
-	physic_addr += ms_hyperv.shared_gpa_boundary;
-	area = get_vm_area((2 * page_cnt - 1) * PAGE_SIZE, VM_IOREMAP);
-	if (!area || !area->addr)
-		return -EFAULT;
+	pages_wraparound = kcalloc(page_cnt * 2 - 1, sizeof(struct page *),
+					GFP_KERNEL);
+	if (!pages_wraparound)
+		return -ENOMEM;
 
-	vaddr = (unsigned long)area->addr;
-	err = ioremap_page_range(vaddr, vaddr + page_cnt * PAGE_SIZE,
-			   physic_addr, PAGE_KERNEL_IO);
-	err |= ioremap_page_range(vaddr + page_cnt * PAGE_SIZE,
-				  vaddr + (2 * page_cnt - 1) * PAGE_SIZE,
-				  physic_addr + PAGE_SIZE, PAGE_KERNEL_IO);
-	if (err) {
-		vunmap((void *)vaddr);
-		return -EFAULT;
-	}
+	pages_wraparound[0] = pages;
+	for (i = 0; i < 2 * (page_cnt - 1); i++)
+		pages_wraparound[i + 1] = &pages[i % (page_cnt - 1) + 1];
 
-	/* Clean memory after setting host visibility. */
-	memset((void *)vaddr, 0x00, page_cnt * PAGE_SIZE);
+	ring_info->ring_buffer = (struct hv_ring_buffer *)
+		vmap(pages_wraparound, page_cnt * 2 - 1, VM_MAP, PAGE_KERNEL_NOENC);
 
-	ring_info->ring_buffer = (struct hv_ring_buffer *)vaddr;
+	kfree(pages_wraparound);
+
+	if (!ring_info->ring_buffer)
+		return -ENOMEM;
+
 	ring_info->ring_buffer->read_index = 0;
 	ring_info->ring_buffer->write_index = 0;
 	ring_info->ring_buffer->feature_bits.value = 1;

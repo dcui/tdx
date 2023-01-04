@@ -107,8 +107,15 @@ struct sp_device {
 	void *psp_data;
 };
 
+#ifdef CONFIG_PCI
 int sp_pci_init(void);
 void sp_pci_exit(void);
+#else
+static int sp_pci_init(void)
+{ return -1; }
+void sp_pci_exit(void);
+{}
+#endif
 
 int sp_platform_init(void);
 void sp_platform_exit(void);

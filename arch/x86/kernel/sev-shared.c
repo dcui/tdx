@@ -39,6 +39,61 @@ struct sev_snp_cpuid_page
 
 struct sev_snp_cpuid_page psp_cpuid_page = { .count = -1 };
 
+/*
+ * The SNP Firmware ABI, Revision 0.9, Section 7.1, details the use of
+ * XCR0_IN and XSS_IN to encode multiple versions of 0xD subfunctions 0
+ * and 1 based on the corresponding features enabled by a particular
+ * combination of XCR0 and XSS registers so that a guest can look up the
+ * version corresponding to the features currently enabled in its XCR0/XSS
+ * registers. The only values that differ between these versions/table
+ * entries is the enabled XSAVE area size advertised via EBX.
+ *
+ * While hypervisors may choose to make use of this support, it is more
+ * robust/secure for a guest to simply find the entry corresponding to the
+ * base/legacy XSAVE area size (XCR0=1 or XCR0=3), and then calculate the
+ * XSAVE area size using subfunctions 2 through 64, as documented in APM
+ * Volume 3, Rev 3.31, Appendix E.3.8, which is what is done here.
+ *
+ * Since base/legacy XSAVE area size is documented as 0x240, use that value
+ * directly rather than relying on the base size in the CPUID table.
+ *
+ * Return: XSAVE area size on success, 0 otherwise.
+ */
+static u32 snp_cpuid_calc_xsave_size(struct sev_snp_cpuid_page *cpuid_page, u64 xfeatures_en, bool compacted)
+{
+	u64 xfeatures_found = 0;
+	u32 xsave_size = 0x240;
+	int i;
+
+	for (i = 0; i < cpuid_page->count; i++) {
+		const struct sev_snp_cpuid_leaf *e = &cpuid_page->cpuid_leaf_info[i];
+
+		if (!(e->eax_in == 0xD && e->ecx_in > 1 && e->ecx_in < 64))
+			continue;
+		if (!(xfeatures_en & (BIT_ULL(e->ecx_in))))
+			continue;
+		if (xfeatures_found & (BIT_ULL(e->ecx_in)))
+			continue;
+
+		xfeatures_found |= (BIT_ULL(e->ecx_in));
+
+		if (compacted)
+			xsave_size += e->eax_out;
+		else
+			xsave_size = max(xsave_size, e->eax_out + e->ebx_out);
+	}
+
+	/*
+	 * Either the guest set unsupported XCR0/XSS bits, or the corresponding
+	 * entries in the CPUID table were not present. This is not a valid
+	 * state to be in.
+	 */
+	if (xfeatures_found != (xfeatures_en & GENMASK_ULL(63, 2)))
+		return 0;
+
+	return xsave_size;
+}
+
 static bool lookup_cpuid_page(struct pt_regs *regs)
 {
 	struct sev_snp_cpuid_page *cpuid_page;
@@ -47,7 +102,12 @@ static bool lookup_cpuid_page(struct pt_regs *regs)
 	bool found = false;
 	int i;
 
-	if (eax_in < 0xb)
+	if (eax_in < 0xb ||
+		eax_in == 0x80000002 ||
+		eax_in == 0x80000003 ||
+		eax_in == 0x80000004 ||
+		eax_in == 0x80000005 ||
+		eax_in == 0x80000006)
 		ecx_in = 0;
 
 #ifdef __BOOT_COMPRESSED
@@ -83,15 +143,60 @@ static bool lookup_cpuid_page(struct pt_regs *regs)
 	}
 #endif
 
-	if (eax_in == 1) {
+	switch(eax_in) {
+	case 0x1:
+	
 		regs->cx |= BIT(31); /* Inside a VM */
-		regs->cx &= ~BIT(26); /* No XSAVE */
+		//regs->cx &= ~BIT(26); /* No XSAVE */
 		regs->cx &= ~BIT(21); /* No x2apic */
-	} else if (eax_in == 0xd) { /* No extended state support */
-		regs->ax = 0;
-		regs->bx = 0;
-		regs->cx = 0;
-		regs->dx = 0;
+
+		if (native_read_cr4() & X86_CR4_OSXSAVE)
+			regs->cx |= BIT(27);
+		break;
+	case 0xd: {
+		bool compacted = false;
+		u64 xcr0 = 1, xss = 0;
+		u32 xsave_size;
+
+		if (ecx_in != 0 && ecx_in != 1)
+			return true;
+
+		if (native_read_cr4() & X86_CR4_OSXSAVE)
+			xcr0 = xgetbv(XCR_XFEATURE_ENABLED_MASK);
+		if (ecx_in == 1) {
+			/* Get XSS value if XSAVES is enabled. */
+			if (regs->ax & BIT(3)) {
+				unsigned long lo, hi;
+
+				asm volatile("rdmsr" : "=a" (lo), "=d" (hi)
+						     : "c" (MSR_IA32_XSS));
+				xss = (hi << 32) | lo;
+			}
+
+			/*
+			 * The PPR and APM aren't clear on what size should be
+			 * encoded in 0xD:0x1:EBX when compaction is not enabled
+			 * by either XSAVEC (feature bit 1) or XSAVES (feature
+			 * bit 3) since SNP-capable hardware has these feature
+			 * bits fixed as 1. KVM sets it to 0 in this case, but
+			 * to avoid this becoming an issue it's safer to simply
+			 * treat this as unsupported for SNP guests.
+			 */
+			if (!(regs->ax & (BIT(1) | BIT(3))))
+				return false;
+
+			compacted = true;
+		}
+
+		xsave_size = snp_cpuid_calc_xsave_size(cpuid_page, xcr0 | xss, compacted);
+		if (!xsave_size)
+			return false;
+
+		regs->bx = xsave_size;
+		}
+		break;
+	default:
+		break;
 	}
 
 	return true;
@@ -192,7 +297,7 @@ enum es_result sev_es_ghcb_hv_call(struct ghcb *ghcb,
 	ghcb_set_sw_exit_info_1(ghcb, exit_info_1);
 	ghcb_set_sw_exit_info_2(ghcb, exit_info_2);
 
-	sev_es_wr_ghcb_msr(__pa(ghcb));
+	BUG_ON(sev_es_rd_ghcb_msr() != __pa(ghcb));
 	VMGEXIT();
 
 	if ((ghcb->save.sw_exit_info_1 & 0xffffffff) == 1) {

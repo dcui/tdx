@@ -122,30 +122,28 @@ struct sev_hv_doorbell_page *sev_snp_current_doorbell_page(void)
 	return &this_cpu_read(snp_runtime_data)->hv_doorbell_page;
 }
 
+static u8 sev_hv_pending(void)
+{
+	return sev_snp_current_doorbell_page()->vector;
+}
+
 static void hv_doorbell_apic_eoi_write(u32 reg, u32 val)
 {
-	struct sev_hv_doorbell_page *hv_doorbell_page = sev_snp_current_doorbell_page();;
-
-	if (xchg(&hv_doorbell_page->no_eoi_required, 0) & 0x1)
+	if (xchg(&sev_snp_current_doorbell_page()->no_eoi_required, 0) & 0x1)
 		return;
 
 	BUG_ON(reg != APIC_EOI);
 	apic->write(reg, val);
 }
 
-static DEFINE_PER_CPU(u8, hv_pending);
-
 static void do_exc_hv(struct pt_regs *regs)
 {
-	struct sev_hv_doorbell_page *hvp = sev_snp_current_doorbell_page();
 	u8 vector;
 
-	BUG_ON((native_save_fl() & X86_EFLAGS_IF) == 0);
-
-	while (this_cpu_read(hv_pending)) {
+	while (sev_hv_pending()) {
 		asm volatile("cli": : :"memory");
-		this_cpu_write(hv_pending, 0);
-		vector = xchg(&hvp->vector, 0);
+
+		vector = xchg(&sev_snp_current_doorbell_page()->vector, 0);
 
 		switch (vector) {
 #if IS_ENABLED(CONFIG_HYPERV)
@@ -173,6 +171,20 @@ static void do_exc_hv(struct pt_regs *regs)
 			sysvec_call_function(regs);
 			break;
 #endif
+#ifdef CONFIG_X86_LOCAL_APIC
+		case ERROR_APIC_VECTOR:
+			sysvec_error_interrupt(regs);
+			break;
+		case SPURIOUS_APIC_VECTOR:
+			sysvec_spurious_apic_interrupt(regs);
+			break;
+		case LOCAL_TIMER_VECTOR:
+			sysvec_apic_timer_interrupt(regs);
+			break;
+		case X86_PLATFORM_IPI_VECTOR:
+			sysvec_x86_platform_ipi(regs);
+			break;
+#endif			
 		case 0x0:
 			break;
 		default:
@@ -186,6 +198,8 @@ static void do_exc_hv(struct pt_regs *regs)
 
 void check_hv_pending(struct pt_regs *regs)
 {
+	struct pt_regs local_regs;
+	
 	if (!sev_snp_active())
 		return;
 
@@ -194,11 +208,12 @@ void check_hv_pending(struct pt_regs *regs)
 			return;
 
 		asm volatile("sti": : :"memory");
-		if (!this_cpu_read(hv_pending))
+		if (!sev_hv_pending())
 			return;
+
 		do_exc_hv(regs);
 	} else { 		
-		if (this_cpu_read(hv_pending)) {
+		if (sev_hv_pending()) {
 			memset(&local_regs, 0, sizeof(struct pt_regs));
 			regs = &local_regs;
 			regs->cs = 0x10;
@@ -211,17 +226,13 @@ void check_hv_pending(struct pt_regs *regs)
 }
 EXPORT_SYMBOL_GPL(check_hv_pending);
 
-DEFINE_IDTENTRY_RAW(exc_hv)
+DEFINE_IDTENTRY_HV(exc_hv)
 {
-	struct sev_hv_doorbell_page *hvp = sev_snp_current_doorbell_page();
-
-	this_cpu_write(hv_pending, 1);
 
 	/* Clear the no_further_signal bit */
-	hvp->pending_events &= 0x7fff;
+	sev_snp_current_doorbell_page()->pending_events &= 0x7fff;
 
-	/* TODO: handle NMI and MC? */
-
+	/* TODO: handle NMI and MC? */	
 	check_hv_pending(regs);
 }
 
@@ -342,7 +353,7 @@ static __always_inline void sev_es_wr_ghcb_msr(u64 val)
  *
  * Callers must disable local interrupts around it.
  */
-static noinstr struct ghcb *__sev_get_ghcb(struct ghcb_state *state)
+noinstr struct ghcb *__sev_get_ghcb(struct ghcb_state *state)
 {
 	struct sev_es_runtime_data *data;
 	struct ghcb *ghcb;
@@ -398,10 +409,11 @@ static noinstr struct ghcb *__sev_get_ghcb(struct ghcb_state *state)
 void __init sev_snp_init_hv_handling(void)
 {
 	struct sev_snp_runtime_data *snp_data;
-	int cpu;
-	int err;
 	struct ghcb_state state;
 	struct ghcb *ghcb;
+	unsigned long flags;
+	int cpu;
+	int err;
 
 	BUILD_BUG_ON(offsetof(struct sev_snp_runtime_data, hv_doorbell_page) % PAGE_SIZE);
 
@@ -424,10 +436,12 @@ void __init sev_snp_init_hv_handling(void)
 		per_cpu(snp_runtime_data, cpu) = snp_data;
 	}
 
+	local_irq_save(flags);
 	ghcb = __sev_get_ghcb(&state);
 	sev_snp_setup_hv_doorbell_page(ghcb);
 	sev_es_put_ghcb(&state);
 	apic_set_eoi_write(hv_doorbell_apic_eoi_write);
+	local_irq_restore(flags);
 }
 
 static int vc_fetch_insn_kernel(struct es_em_ctxt *ctxt,
@@ -685,16 +699,30 @@ static enum es_result vc_slow_virt_to_phys(struct ghcb *ghcb, struct es_em_ctxt 
 	return ES_OK;
 }
 
+static inline u64 vmgexit_ghcb_msr(u64 val) {
+	u64 old;
+	unsigned long flags;
+
+	local_irq_save(flags);
+	old = sev_es_rd_ghcb_msr();
+	sev_es_wr_ghcb_msr(val);
+	VMGEXIT();
+	val = sev_es_rd_ghcb_msr();
+	sev_es_wr_ghcb_msr(old);
+	local_irq_restore(flags);
+
+	return val;
+}
+
 /* Include code shared with pre-decompression boot stage */
 #include "sev-shared.c"
 
 void sev_snp_setup_hv_doorbell_page(struct ghcb *ghcb)
 {
 	u64 pa;
-	struct sev_hv_doorbell_page *hv_doorbell_page = sev_snp_current_doorbell_page();
 	enum es_result ret;
 
-	pa = __pa(hv_doorbell_page);
+	pa = __pa(sev_snp_current_doorbell_page());
 	vc_ghcb_invalidate(ghcb);
 	ret = vmgexit_hv_doorbell_page(ghcb, SVM_VMGEXIT_SET_HV_DOORBELL_PAGE, pa);
 	if (ret != ES_OK)
@@ -704,16 +732,10 @@ void sev_snp_setup_hv_doorbell_page(struct ghcb *ghcb)
 void sev_snp_register_ghcb(unsigned long paddr)
 {
 	u64 pfn = paddr >> PAGE_SHIFT;
-	u64 old, val;
-
-	/* save the old GHCB MSR */
-	old = sev_es_rd_ghcb_msr();
+	u64 val;
 
 	/* Issue VMGEXIT */
-	sev_es_wr_ghcb_msr(GHCB_REGISTER_GPA_REQ_VAL(pfn));
-	VMGEXIT();
-
-	val = sev_es_rd_ghcb_msr();
+	val = vmgexit_ghcb_msr(GHCB_REGISTER_GPA_REQ_VAL(pfn));
 
 	/* If the response GPA is not ours then abort the guest */
 	if ((GHCB_SEV_GHCB_RESP_CODE(val) != GHCB_REGISTER_GPA_RESP) ||
@@ -721,10 +743,10 @@ void sev_snp_register_ghcb(unsigned long paddr)
 		sev_es_terminate(GHCB_SEV_ES_REASON_GENERAL_REQUEST);
 
 	/* Restore the GHCB MSR value */
-	sev_es_wr_ghcb_msr(old);
+	sev_es_wr_ghcb_msr(pfn << PAGE_SHIFT);
 }
 
-static void sev_snp_issue_pvalidate(unsigned long vaddr, unsigned int npages, bool validate)
+void sev_snp_issue_pvalidate(unsigned long vaddr, unsigned int npages, bool validate)
 {
 	unsigned long eflags, vaddr_end, vaddr_next;
 	int rc;
@@ -763,13 +785,10 @@ e_fail:
 static void __init early_snp_set_page_state(unsigned long paddr, unsigned int npages, int op)
 {
 	unsigned long paddr_end, paddr_next;
-	u64 old, val;
+	u64 val;
 
 	paddr = paddr & PAGE_MASK;
 	paddr_end = paddr + (npages << PAGE_SHIFT);
-
-	/* save the old GHCB MSR */
-	old = sev_es_rd_ghcb_msr();
 
 	for (; paddr < paddr_end; paddr = paddr_next) {
 
@@ -778,10 +797,7 @@ static void __init early_snp_set_page_state(unsigned long paddr, unsigned int np
 		 * protocol VMGEXIT because in early boot we may not have the full GHCB setup
 		 * yet.
 		 */
-		sev_es_wr_ghcb_msr(GHCB_SNP_PAGE_STATE_REQ_GFN(paddr >> PAGE_SHIFT, op));
-		VMGEXIT();
-
-		val = sev_es_rd_ghcb_msr();
+		val = vmgexit_ghcb_msr(GHCB_SNP_PAGE_STATE_REQ_GFN(paddr >> PAGE_SHIFT, op));
 
 		/* Read the response, if the page state change failed then terminate the guest. */
 		if (GHCB_SEV_GHCB_RESP_CODE(val) != GHCB_SNP_PAGE_STATE_CHANGE_RESP)
@@ -801,9 +817,6 @@ static void __init early_snp_set_page_state(unsigned long paddr, unsigned int np
 
 		paddr_next = paddr + PAGE_SIZE;
 	}
-
-	/* Restore the GHCB MSR value */
-	sev_es_wr_ghcb_msr(old);
 }
 
 void __init early_snp_set_memory_private(unsigned long vaddr, unsigned long paddr,
@@ -844,8 +857,10 @@ static int snp_page_state_vmgexit(struct ghcb *ghcb, struct snp_page_state_chang
 		ghcb_set_sw_scratch(ghcb, (u64)__pa(data));
 		ret = vmgexit_page_state_change(ghcb, data);
 		/* Page State Change VMGEXIT can pass error code through exit_info_2. */
-		if (ret || ghcb->save.sw_exit_info_2)
+		if (ret || ghcb->save.sw_exit_info_2) {
+			//printk("exit_info1=%llx exit_info2=%llx\n", ghcb->save.sw_exit_info_1, ghcb->save.sw_exit_info_2);
 			break;
+		}
 	}
 
 	return ret;
@@ -859,11 +874,13 @@ static void snp_set_page_state(unsigned long paddr, unsigned int npages, int op)
 	struct snp_page_state_entry *e;
 	struct ghcb_state state;
 	struct ghcb *ghcb;
+	unsigned long flags;
 	int ret, idx;
 
 	paddr = paddr & PAGE_MASK;
 	paddr_end = paddr + (npages << PAGE_SHIFT);
 
+	local_irq_save(flags);
 	ghcb = __sev_get_ghcb(&state);
 
 	data = (struct snp_page_state_change *)ghcb->shared_buffer;
@@ -888,23 +905,28 @@ static void snp_set_page_state(unsigned long paddr, unsigned int npages, int op)
 		hdr->end_entry = idx;
 		e->gfn = paddr >> PAGE_SHIFT;
 		e->operation = op;
-		e->pagesize = X86_RMP_PG_LEVEL(level);
+		e->pagesize = RMP_PG_SIZE_4K;
 		e++;
 		idx++;
-		paddr_next = paddr + page_level_size(level);
+		paddr_next = paddr + PAGE_SIZE;		
 	}
 
 	/*
 	 * We can exit the above loop before issuing the VMGEXIT, if we exited before calling the
 	 * the VMGEXIT, then issue the VMGEXIT now.
 	 */
-	if (idx)
+	if (idx) {
 		ret = snp_page_state_vmgexit(ghcb, data);
+		if (ret)
+			goto e_fail;
+	}
 
 	sev_es_put_ghcb(&state);
+	local_irq_restore(flags);
 	return;
 
 e_fail:
+	local_irq_restore(flags);
 	/* Dump stack for the debugging purpose */
 	dump_stack();
 
@@ -912,22 +934,25 @@ e_fail:
 	sev_es_terminate(GHCB_SEV_ES_REASON_GENERAL_REQUEST);
 }
 
-int snp_set_memory_shared(unsigned long vaddr, unsigned int npages)
+int snp_set_memory_shared(unsigned long vaddr, unsigned long paddr, unsigned int npages)
 {
 	/* Invalidate the memory before changing the page state in the RMP table. */
 	sev_snp_issue_pvalidate(vaddr, npages, false);
 
 	/* Change the page state in the RMP table. */
-	snp_set_page_state(__pa(vaddr), npages, SNP_PAGE_STATE_SHARED);
+	snp_set_page_state(paddr, npages, SNP_PAGE_STATE_SHARED);
 
 	return 0;
 }
 
-int snp_set_memory_private(unsigned long vaddr, unsigned int npages)
+int snp_set_memory_private(unsigned long vaddr, unsigned long paddr, unsigned int npages)
 {
-	/* Change the page state in the RMP table. */
-	snp_set_page_state(__pa(vaddr), npages, SNP_PAGE_STATE_PRIVATE);
+	//printk("set memory private vaddr=%llx paddr=%llx npages=%d!\n", vaddr, paddr, npages);
 
+	/* Change the page state in the RMP table. */
+	//early_snp_set_page_state(paddr, npages, SNP_PAGE_STATE_PRIVATE);
+	snp_set_page_state(paddr, npages, SNP_PAGE_STATE_PRIVATE);
+	
 	/* Validate the memory after the memory is made private in the RMP table. */
 	sev_snp_issue_pvalidate(vaddr, npages, true);
 
@@ -971,7 +996,7 @@ void noinstr __sev_es_nmi_complete(void)
 	ghcb_set_sw_exit_info_1(ghcb, 0);
 	ghcb_set_sw_exit_info_2(ghcb, 0);
 
-	sev_es_wr_ghcb_msr(__pa_nodebug(ghcb));
+	BUG_ON(sev_es_rd_ghcb_msr() != __pa_nodebug(ghcb));
 	VMGEXIT();
 
 	__sev_put_ghcb(&state);
@@ -993,7 +1018,7 @@ static u64 get_jump_table_addr(void)
 	ghcb_set_sw_exit_info_1(ghcb, SVM_VMGEXIT_GET_AP_JUMP_TABLE);
 	ghcb_set_sw_exit_info_2(ghcb, 0);
 
-	sev_es_wr_ghcb_msr(__pa(ghcb));
+	BUG_ON(sev_es_rd_ghcb_msr() != __pa(ghcb));
 	VMGEXIT();
 
 	if (ghcb_sw_exit_info_1_is_valid(ghcb) &&
@@ -1142,8 +1167,6 @@ static bool __init sev_es_setup_ghcb(void)
 
 int vmgexit_page_state_change(struct ghcb *ghcb, void *data)
 {
-	ghcb_set_sw_scratch(ghcb, (u64)__pa(data));
-
 	return sev_es_ghcb_hv_call(ghcb, NULL, SVM_VMGEXIT_PAGE_STATE_CHANGE, 0, 0);
 }
 
@@ -1151,6 +1174,35 @@ int vmgexit_hv_doorbell_page(struct ghcb *ghcb, u64 op, u64 pa)
 {
 	return sev_es_ghcb_hv_call(ghcb, NULL, SVM_VMGEXIT_HV_DOORBELL_PAGE, op, pa);
 }
+
+int vmgexit_snp_guest_request(unsigned long request, unsigned long response)
+{
+	enum es_result ret;
+	struct ghcb_state state;
+	struct ghcb *ghcb;
+	unsigned long request_pa, response_pa, flags;
+	int fw_err;
+
+	if (!sev_snp_active())
+		return -ENXIO;
+
+	local_irq_save(flags);
+	request_pa = __pa(request);
+	response_pa = __pa(response);
+
+	ghcb = __sev_get_ghcb(&state);
+	vc_ghcb_invalidate(ghcb);
+	ret = sev_es_ghcb_hv_call(ghcb, NULL, SVM_VMGEXIT_SNP_GUEST_REQUEST,
+				request_pa, response_pa);
+	fw_err = ghcb->save.sw_exit_info_2;
+	__sev_put_ghcb(&state);
+	local_irq_restore(flags);
+
+	if (ret != ES_OK)
+		fw_err = -ENXIO;
+	return fw_err;
+}
+EXPORT_SYMBOL_GPL(vmgexit_snp_guest_request);
 
 #ifdef CONFIG_HOTPLUG_CPU
 static void sev_es_ap_hlt_loop(void)
@@ -1166,7 +1218,7 @@ static void sev_es_ap_hlt_loop(void)
 		ghcb_set_sw_exit_info_1(ghcb, 0);
 		ghcb_set_sw_exit_info_2(ghcb, 0);
 
-		sev_es_wr_ghcb_msr(__pa(ghcb));
+		BUG_ON(sev_es_rd_ghcb_msr() != __pa(ghcb));
 		VMGEXIT();
 
 		/* Wakeup signal? */
@@ -1758,6 +1810,7 @@ static enum es_result vc_handle_exitcode(struct es_em_ctxt *ctxt,
 		/*
 		 * Unexpected #VC exception
 		 */
+		pr_info("unexpect vc!!!\n");
 		result = ES_UNSUPPORTED;
 	}
 

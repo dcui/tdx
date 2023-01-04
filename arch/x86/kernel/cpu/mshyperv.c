@@ -32,6 +32,12 @@
 #include <asm/nmi.h>
 #include <clocksource/hyperv_timer.h>
 #include <asm/numa.h>
+#include <asm/io_apic.h>
+#include <asm/svm.h>
+#include <asm/sev.h>
+#include <asm/sev-snp.h>
+#include <asm/realmode.h>
+#include <asm/e820/api.h>
 
 /* Is Linux running as the root partition? */
 bool hv_root_partition;
@@ -253,6 +259,160 @@ static void __init hv_smp_prepare_cpus(unsigned int max_cpus)
 }
 #endif
 
+static __init int hv_snp_set_rtc_noop(const struct timespec64 *now) { return -EINVAL; }
+static __init void hv_snp_get_rtc_noop(struct timespec64 *now) { }
+
+static u32 processor_count;
+
+static __init void hv_snp_get_smp_config(unsigned int early)
+{
+	if (!early) {
+		while (num_processors < processor_count) {
+			early_per_cpu(x86_cpu_to_apicid, num_processors) = num_processors;
+			early_per_cpu(x86_bios_cpu_apicid, num_processors) = num_processors;
+			physid_set(num_processors, phys_cpu_present_map);
+			set_cpu_possible(num_processors, true);
+			set_cpu_present(num_processors, true);
+			num_processors++;
+		}
+	}
+}
+
+static u8 ap_start_input_arg[PAGE_SIZE] __bss_decrypted __aligned(PAGE_SIZE);
+static u8 ap_start_stack[PAGE_SIZE] __aligned(PAGE_SIZE);
+
+int hv_snp_boot_ap(int cpu, unsigned long start_ip)
+{
+	struct vmcb_save_area *vmsa = (struct vmcb_save_area *)__get_free_page(GFP_KERNEL | __GFP_ZERO);
+	struct desc_ptr gdtr;
+	u64 ret;
+	struct hv_enable_vp_vtl_input *enable_vtl_input;
+	struct hv_start_virtual_processor_input *start_vp_input;
+	union sev_rmp_adjust rmp_adjust;
+	void **arg;
+	unsigned long flags;
+
+	*(void **)per_cpu_ptr(hyperv_pcpu_input_arg, cpu) = ap_start_input_arg;
+	hv_vp_index[cpu] = cpu;
+
+	/* Prevent APs from entering busy calibration loop */
+	preset_lpj = lpj_fine;
+
+	/* Replace the provided real-mode start_ip */
+	start_ip = (unsigned long)secondary_startup_64_no_verify;
+
+	native_store_gdt(&gdtr);
+
+	vmsa->gdtr.base = gdtr.address;
+	vmsa->gdtr.limit = gdtr.size;
+
+	asm volatile("movl %%es, %%eax;" : "=a" (vmsa->es.selector));
+	if (vmsa->es.selector) {
+		vmsa->es.base = 0;
+		vmsa->es.limit = 0xffffffff;
+		vmsa->es.attrib = *(u16 *)(vmsa->gdtr.base + vmsa->es.selector + 5);
+		vmsa->es.attrib = (vmsa->es.attrib & 0xFF) | ((vmsa->es.attrib >> 4) & 0xF00);
+	}
+
+	asm volatile("movl %%cs, %%eax;" : "=a" (vmsa->cs.selector));
+	if (vmsa->cs.selector) {
+		vmsa->cs.base = 0;
+		vmsa->cs.limit = 0xffffffff;
+		vmsa->cs.attrib = *(u16 *)(vmsa->gdtr.base + vmsa->cs.selector + 5);
+		vmsa->cs.attrib = (vmsa->cs.attrib & 0xFF) | ((vmsa->cs.attrib >> 4) & 0xF00);
+	}
+
+	asm volatile("movl %%ss, %%eax;" : "=a" (vmsa->ss.selector));
+	if (vmsa->ss.selector) {
+		vmsa->ss.base = 0;
+		vmsa->ss.limit = 0xffffffff;
+		vmsa->ss.attrib = *(u16 *)(vmsa->gdtr.base + vmsa->ss.selector + 5);
+		vmsa->ss.attrib = (vmsa->ss.attrib & 0xFF) | ((vmsa->ss.attrib >> 4) & 0xF00);
+	}
+
+	asm volatile("movl %%ds, %%eax;" : "=a" (vmsa->ds.selector));
+	if (vmsa->ds.selector) {
+		vmsa->ds.base = 0;
+		vmsa->ds.limit = 0xffffffff;
+		vmsa->ds.attrib = *(u16 *)(vmsa->gdtr.base + vmsa->ds.selector + 5);
+		vmsa->ds.attrib = (vmsa->ds.attrib & 0xFF) | ((vmsa->ds.attrib >> 4) & 0xF00);
+	}
+
+	vmsa->efer = native_read_msr(MSR_EFER);
+
+	asm volatile("movq %%cr4, %%rax;" : "=a" (vmsa->cr4));
+	asm volatile("movq %%cr3, %%rax;" : "=a" (vmsa->cr3));
+	asm volatile("movq %%cr0, %%rax;" : "=a" (vmsa->cr0));
+	vmsa->xcr0 = 1;
+
+	vmsa->g_pat = 0x0606060606060606ull;
+
+	vmsa->rip = (u64)start_ip;
+	vmsa->rsp = (u64)&ap_start_stack[PAGE_SIZE];
+
+	vmsa->sev_feature_snp = 1;
+	vmsa->sev_feature_restrict_injection = 1;
+
+	rmp_adjust.as_uint64 = 0;
+	rmp_adjust.target_vmpl = 1;
+	rmp_adjust.vmsa = 1;
+	RMPADJUST(vmsa, 0, rmp_adjust, ret);
+	if (ret != 0) {
+		pr_err("RMPADJUST(%llx) failed: %llx\n", (u64)vmsa, ret);
+		return ret;
+	}
+
+	local_irq_save(flags);
+	arg = (void **)this_cpu_ptr(hyperv_pcpu_input_arg);
+	if (unlikely(!*arg)) {
+		ret = -ENOMEM;
+		goto done;
+	}
+
+	if (ms_hyperv.vtl != 0) {
+		enable_vtl_input = (struct hv_enable_vp_vtl_input *)*arg;
+		memset(enable_vtl_input, 0, sizeof(*enable_vtl_input));
+		enable_vtl_input->partitionid = -1;
+		enable_vtl_input->vpindex = cpu;
+		enable_vtl_input->targetvtl = ms_hyperv.vtl;
+		*(u64 *)&enable_vtl_input->context[0] = __pa(vmsa) | 1;
+
+		ret = hv_do_hypercall(HVCALL_ENABLE_VP_VTL, enable_vtl_input, NULL);
+		if (ret != 0) {
+			pr_err("HvCallEnableVpVtl failed: %llx\n", ret);
+			goto done;
+		}
+	}
+
+	start_vp_input = (struct hv_start_virtual_processor_input *)*arg;
+	memset(start_vp_input, 0, sizeof(*start_vp_input));
+	start_vp_input->partitionid = -1;
+	start_vp_input->vpindex = cpu;
+	start_vp_input->targetvtl = ms_hyperv.vtl;
+	*(u64 *)&start_vp_input->context[0] = __pa(vmsa) | 1;
+	do {
+		ret = hv_do_hypercall(HVCALL_START_VIRTUAL_PROCESSOR, start_vp_input, NULL);
+	} while (ret == 0x78);
+
+	if (ret != 0) {
+		pr_err("HvCallStartVirtualProcessor failed: %llx\n", ret);
+		goto done;
+	}
+	ret = 0;
+
+done:
+	local_irq_restore(flags);
+	return ret;
+}
+
+struct memory_map_entry {
+	u64 starting_gpn;
+	u64 numpages;
+	u16 type;
+	u16 flags;
+	u32 reserved;
+};
+
 static void __init ms_hyperv_init_platform(void)
 {
 	int hv_max_functions_eax;
@@ -260,6 +420,11 @@ static void __init ms_hyperv_init_platform(void)
 	int hv_host_info_ebx;
 	int hv_host_info_ecx;
 	int hv_host_info_edx;
+	struct memory_map_entry *entry;
+	struct e820_entry *e820_entry;
+	u64 e820_end;
+	u64 ram_end;
+	u64 page;
 
 #ifdef CONFIG_PARAVIRT
 	pv_info.name = "Hyper-V";
@@ -278,6 +443,19 @@ static void __init ms_hyperv_init_platform(void)
 	pr_info("Hyper-V: privilege flags low 0x%x, high 0x%x, hints 0x%x, misc 0x%x\n",
 		ms_hyperv.features, ms_hyperv.priv_high, ms_hyperv.hints,
 		ms_hyperv.misc_features);
+
+	if (sev_snp_active()) {
+		ms_hyperv.features |= HV_ACCESS_FREQUENCY_MSRS;
+		ms_hyperv.isolation_config_b |= HV_ISOLATION;
+		ms_hyperv.misc_features |= HV_FEATURE_FREQUENCY_MSRS_AVAILABLE;
+		ms_hyperv.misc_features &= ~HV_FEATURE_GUEST_CRASH_MSR_AVAILABLE;
+		ms_hyperv.hints |= HV_DEPRECATING_AEOI_RECOMMENDED;
+		ms_hyperv.hints |= HV_X64_APIC_ACCESS_RECOMMENDED;
+		ms_hyperv.hints |= HV_X64_CLUSTER_IPI_RECOMMENDED;
+	}
+
+	pr_info("Hyper-V: enlightment features 0x%x, hints 0x%x, misc 0x%x\n",
+		ms_hyperv.features, ms_hyperv.hints, ms_hyperv.misc_features);
 
 	ms_hyperv.max_vp_index = cpuid_eax(HYPERV_CPUID_IMPLEMENT_LIMITS);
 	ms_hyperv.max_lp_index = cpuid_ebx(HYPERV_CPUID_IMPLEMENT_LIMITS);
@@ -325,8 +503,12 @@ static void __init ms_hyperv_init_platform(void)
 	if (ms_hyperv.priv_high & HV_ISOLATION) {
 		ms_hyperv.isolation_config_a = cpuid_eax(HYPERV_CPUID_ISOLATION_CONFIG);
 		ms_hyperv.isolation_config_b = cpuid_ebx(HYPERV_CPUID_ISOLATION_CONFIG);
-		ms_hyperv.shared_gpa_boundary =
-			(u64)1 << ms_hyperv.shared_gpa_boundary_bits;
+
+		if (sev_snp_active()) {
+			ms_hyperv.isolation_config_b |= HV_ISOLATION_TYPE_SNP;
+			BUG_ON(ms_hyperv.shared_gpa_boundary_active);
+			BUG_ON(ms_hyperv.shared_gpa_boundary_bits != 0);
+		}
 
 		pr_info("Hyper-V: Isolation Config: Group A 0x%x, Group B 0x%x\n",
 			ms_hyperv.isolation_config_a, ms_hyperv.isolation_config_b);
@@ -438,6 +620,7 @@ static void __init ms_hyperv_init_platform(void)
 	/* Register Hyper-V specific clocksource */
 	hv_init_clocksource();
 #endif
+
 	/*
 	 * TSC should be marked as unstable only after Hyper-V
 	 * clocksource has been initialized. This ensures that the
@@ -445,6 +628,45 @@ static void __init ms_hyperv_init_platform(void)
 	 */
 	if (!(ms_hyperv.features & HV_ACCESS_TSC_INVARIANT))
 		mark_tsc_unstable("running on Hyper-V");
+
+	if (sev_snp_active()) {
+		x86_platform.legacy.reserve_bios_regions = 0;
+		x86_platform.set_wallclock = hv_snp_set_rtc_noop;
+		x86_platform.get_wallclock = hv_snp_get_rtc_noop;
+		x86_init.resources.probe_roms = x86_init_noop;
+		x86_init.resources.reserve_resources = x86_init_noop;
+		x86_init.mpparse.find_smp_config = x86_init_noop;
+		x86_init.mpparse.get_smp_config = hv_snp_get_smp_config;
+
+		// disable ioapic
+		disable_ioapic_support();
+
+		// switch to synic
+		hv_apic_init();
+
+		processor_count = *(u32 *)__va(0x802000);
+		BUG_ON(processor_count == 0);
+
+		entry = (struct memory_map_entry *)(__va(0x802000) + sizeof(struct memory_map_entry));
+		BUG_ON(entry->starting_gpn != 0);
+		BUG_ON(entry->numpages == 0);
+		for (; entry->numpages != 0; entry++) {
+			BUG_ON(entry->type != 0);
+			e820_entry = &e820_table->entries[e820_table->nr_entries - 1];
+			e820_end = e820_entry->addr + e820_entry->size;
+			ram_end = (entry->starting_gpn + entry->numpages) * PAGE_SIZE;
+			BUG_ON(e820_end > ram_end);
+			if (e820_end < entry->starting_gpn * PAGE_SIZE)
+				e820_end = entry->starting_gpn * PAGE_SIZE;
+			if (e820_end < ram_end) {
+				pr_info("Hyper-V: add [mem %#018Lx-%#018Lx]\n", e820_end, ram_end - 1);
+				e820__range_add(e820_end, ram_end - e820_end, E820_TYPE_RAM);
+				for (page = e820_end; page < ram_end; page += PAGE_SIZE) {
+					sev_snp_issue_pvalidate((unsigned long)__va(page), 1, true);
+				}
+			}
+		}
+	}
 }
 
 static bool __init ms_hyperv_x2apic_available(void)
@@ -474,6 +696,20 @@ static bool __init ms_hyperv_msi_ext_dest_id(void)
 	return eax & HYPERV_VS_PROPERTIES_EAX_EXTENDED_IOAPIC_RTE;
 }
 
+static void hv_sev_es_hcall_prepare(struct ghcb *ghcb, struct pt_regs *regs)
+{
+	/* RAX and CPL are already in the GHCB */
+	ghcb_set_rcx(ghcb, regs->cx);
+	ghcb_set_rdx(ghcb, regs->dx);
+	ghcb_set_r8(ghcb, regs->r8);
+}
+
+static bool hv_sev_es_hcall_finish(struct ghcb *ghcb, struct pt_regs *regs)
+{
+	/* No checking of the return state needed */
+	return true;
+}
+
 const __initconst struct hypervisor_x86 x86_hyper_ms_hyperv = {
 	.name			= "Microsoft Hyper-V",
 	.detect			= ms_hyperv_platform,
@@ -481,4 +717,6 @@ const __initconst struct hypervisor_x86 x86_hyper_ms_hyperv = {
 	.init.x2apic_available	= ms_hyperv_x2apic_available,
 	.init.msi_ext_dest_id	= ms_hyperv_msi_ext_dest_id,
 	.init.init_platform	= ms_hyperv_init_platform,
+	.runtime.sev_es_hcall_prepare = hv_sev_es_hcall_prepare,
+	.runtime.sev_es_hcall_finish = hv_sev_es_hcall_finish,
 };

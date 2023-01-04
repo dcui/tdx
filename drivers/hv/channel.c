@@ -17,6 +17,7 @@
 #include <linux/hyperv.h>
 #include <linux/uio.h>
 #include <linux/interrupt.h>
+#include <linux/set_memory.h>
 #include <asm/page.h>
 #include <asm/mshyperv.h>
 
@@ -303,38 +304,6 @@ int vmbus_send_modifychannel(struct vmbus_channel *channel, u32 target_vp)
 EXPORT_SYMBOL_GPL(vmbus_send_modifychannel);
 
 /*
- * hv_set_mem_host_visibility - Set host visibility for specified memory.
- */
-int hv_set_mem_host_visibility(void *kbuffer, u32 size, u32 visibility)
-{
-	int i, pfn;
-	int pagecount = size >> HV_HYP_PAGE_SHIFT;
-	u64 *pfn_array;
-	int ret = 0;
-
-	if (!hv_is_isolation_supported())
-		return 0;
-
-	pfn_array = vzalloc(HV_HYP_PAGE_SIZE);
-	if (!pfn_array)
-		return -ENOMEM;
-
-	for (i = 0, pfn = 0; i < pagecount; i++) {
-		pfn_array[pfn] = virt_to_hvpfn(kbuffer + i * HV_HYP_PAGE_SIZE);
-		pfn++;
-
-		if (pfn == HV_MAX_MODIFY_GPA_REP_COUNT || i == pagecount - 1) {
-			ret |= hv_mark_gpa_visibility(pfn, pfn_array, visibility);
-			pfn = 0;
-		}
-	}
-
-	vfree(pfn_array);
-	return ret;
-}
-EXPORT_SYMBOL_GPL(hv_set_mem_host_visibility);
-
-/*
  * create_gpadl_header - Creates a gpadl for the specified buffer
  */
 static int create_gpadl_header(enum hv_gpadl_type type, void *kbuffer,
@@ -507,10 +476,11 @@ static int __vmbus_establish_gpadl(struct vmbus_channel *channel,
 	if (ret)
 		return ret;
 
-	ret = hv_set_mem_host_visibility(kbuffer, size, visibility);
-	if (ret) {
-		pr_warn("Failed to set host visibility.\n");
-		return ret;
+	BUG_ON(size % PAGE_SIZE != 0);
+
+	if (visibility != VMBUS_PAGE_NOT_VISIBLE) {
+		BUG_ON(set_memory_decrypted((unsigned long)kbuffer, size / PAGE_SIZE) != 0);
+		memset(kbuffer, 0, size);
 	}
 
 	init_completion(&msginfo->waitevent);
@@ -561,7 +531,6 @@ static int __vmbus_establish_gpadl(struct vmbus_channel *channel,
 
 	}
 	wait_for_completion(&msginfo->waitevent);
-
 	if (msginfo->response.gpadl_created.creation_status != 0) {
 		pr_err("Failed to establish GPADL: err = 0x%x\n",
 		       msginfo->response.gpadl_created.creation_status);
@@ -773,7 +742,6 @@ static int __vmbus_open(struct vmbus_channel *newchannel,
 
 	err = vmbus_post_msg(open_msg,
 			     sizeof(struct vmbus_channel_open_channel), true);
-
 	trace_vmbus_open(open_msg, err);
 
 	if (err != 0)
@@ -910,7 +878,7 @@ post_msg_err:
 
 	kfree(info);
 
-	if (hv_set_mem_host_visibility(kbuffer, size, VMBUS_PAGE_NOT_VISIBLE))
+	if (set_memory_encrypted((unsigned long)kbuffer, size / PAGE_SIZE))
 		pr_warn("Fail to set mem host visibility.\n");
 
 	return ret;

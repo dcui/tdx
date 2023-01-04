@@ -47,8 +47,7 @@ struct ms_hyperv_info {
 			u32 Reserved12 : 20;
 		};
 	};
-	void  __percpu **ghcb_base;
-	u64 shared_gpa_boundary;
+	u8 vtl;
 };
 extern struct ms_hyperv_info ms_hyperv;
 
@@ -151,11 +150,7 @@ static inline void vmbus_signal_eom(struct hv_message *msg, u32 old_msg_type)
 		 * possibly deliver another msg from the
 		 * hypervisor
 		 */
-		if (hv_isolation_type_snp() &&
-		    old_msg_type != HVMSG_TIMER_EXPIRED)
-			hv_signal_eom_ghcb();
-		else
-			hv_set_register(HV_REGISTER_EOM, 0);
+		hv_set_register(HV_REGISTER_EOM, 0);
 	}
 }
 
