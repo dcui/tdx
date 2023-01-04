@@ -26,7 +26,7 @@
 
 #include "hyperv_net.h"
 #include "netvsc_trace.h"
-
+#include "../../hv/hyperv_vmbus.h"
 /*
  * Switch the data path from the synthetic interface to the VF
  * interface.
@@ -153,8 +153,21 @@ static void free_netvsc_device(struct rcu_head *head)
 	int i;
 
 	kfree(nvdev->extension);
-	vfree(nvdev->recv_buf);
-	vfree(nvdev->send_buf);
+
+	if (nvdev->recv_original_buf) {
+		iounmap(nvdev->recv_buf);
+		vfree(nvdev->recv_original_buf);
+	} else {
+		vfree(nvdev->recv_buf);
+	}
+
+	if (nvdev->send_original_buf) {
+		iounmap(nvdev->send_buf);
+		vfree(nvdev->send_original_buf);
+	} else {
+		vfree(nvdev->send_buf);
+	}
+
 	kfree(nvdev->send_section_map);
 
 	for (i = 0; i < VRSS_CHANNEL_MAX; i++) {
@@ -276,11 +289,18 @@ static void netvsc_teardown_recv_gpadl(struct hv_device *device,
 				       struct netvsc_device *net_device,
 				       struct net_device *ndev)
 {
+	void *recv_buf;
 	int ret;
 
 	if (net_device->recv_buf_gpadl_handle) {
+		if (net_device->recv_original_buf)
+			recv_buf = net_device->recv_original_buf;
+		else
+			recv_buf = net_device->recv_buf;
+
 		ret = vmbus_teardown_gpadl(device->channel,
-					   net_device->recv_buf_gpadl_handle);
+					   net_device->recv_buf_gpadl_handle,
+					   recv_buf, net_device->recv_buf_size);
 
 		/* If we failed here, we might as well return and have a leak
 		 * rather than continue and a bugchk
@@ -298,11 +318,18 @@ static void netvsc_teardown_send_gpadl(struct hv_device *device,
 				       struct netvsc_device *net_device,
 				       struct net_device *ndev)
 {
+	void *send_buf;
 	int ret;
 
 	if (net_device->send_buf_gpadl_handle) {
+		if (net_device->send_original_buf)
+			send_buf = net_device->send_original_buf;
+		else
+			send_buf = net_device->send_buf;
+
 		ret = vmbus_teardown_gpadl(device->channel,
-					   net_device->send_buf_gpadl_handle);
+					   net_device->send_buf_gpadl_handle,
+					   send_buf, net_device->send_buf_size);
 
 		/* If we failed here, we might as well return and have a leak
 		 * rather than continue and a bugchk
@@ -337,9 +364,19 @@ static int netvsc_init_buf(struct hv_device *device,
 	struct nvsp_1_message_send_receive_buffer_complete *resp;
 	struct net_device *ndev = hv_get_drvdata(device);
 	struct nvsp_message *init_packet;
+	struct vm_struct *area;
+	u64 extra_phys;
 	unsigned int buf_size;
+	unsigned long vaddr;
 	size_t map_words;
-	int i, ret = 0;
+	int ret = 0, i;
+
+	ret = hv_bounce_resources_reserve(device->channel,
+			PAGE_SIZE * 4096);
+	if (ret) {
+		pr_warn("Fail to reserve bounce buffer.\n");
+		return -ENOMEM;
+	}
 
 	/* Get receive buffer area. */
 	buf_size = device_info->recv_sections * device_info->recv_section_size;
@@ -368,12 +405,35 @@ static int netvsc_init_buf(struct hv_device *device,
 	 */
 	ret = vmbus_establish_gpadl(device->channel, net_device->recv_buf,
 				    buf_size,
-				    &net_device->recv_buf_gpadl_handle);
+				    &net_device->recv_buf_gpadl_handle,
+				    VMBUS_PAGE_VISIBLE_READ_WRITE);
 	if (ret != 0) {
 		netdev_err(ndev,
 			"unable to establish receive buffer's gpadl\n");
 		goto cleanup;
 	}
+
+	if (hv_isolation_type_snp()) {
+		area = get_vm_area(buf_size, VM_IOREMAP);
+		if (!area)
+			goto cleanup;
+
+		vaddr = (unsigned long)area->addr;
+		for (i = 0; i < buf_size / HV_HYP_PAGE_SIZE; i++) {
+			extra_phys = (virt_to_hvpfn(net_device->recv_buf + i * HV_HYP_PAGE_SIZE)
+				<< HV_HYP_PAGE_SHIFT) + ms_hyperv.shared_gpa_boundary;
+			ret |= ioremap_page_range(vaddr + i * HV_HYP_PAGE_SIZE,
+					   vaddr + (i + 1) * HV_HYP_PAGE_SIZE,
+					   extra_phys, PAGE_KERNEL_IO);
+		}
+
+		if (ret)
+			goto cleanup;
+
+		net_device->recv_original_buf = net_device->recv_buf;
+		net_device->recv_buf = (void*)vaddr;
+	}
+
 
 	/* Notify the NetVsp of the gpadl handle */
 	init_packet = &net_device->channel_init_pkt;
@@ -463,20 +523,48 @@ static int netvsc_init_buf(struct hv_device *device,
 		ret = -ENOMEM;
 		goto cleanup;
 	}
+	net_device->send_buf_size = buf_size;
 
 	/* Establish the gpadl handle for this buffer on this
 	 * channel.  Note: This call uses the vmbus connection rather
 	 * than the channel to establish the gpadl handle.
+	 * Send buffer should theoretically be only marked as "read-only", but
+	 * the netvsp for some reason needs write capabilities on it.
 	 */
 	ret = vmbus_establish_gpadl(device->channel, net_device->send_buf,
 				    buf_size,
-				    &net_device->send_buf_gpadl_handle);
+				    &net_device->send_buf_gpadl_handle,
+				    VMBUS_PAGE_VISIBLE_READ_WRITE);
+	
 	if (ret != 0) {
 		netdev_err(ndev,
 			   "unable to establish send buffer's gpadl\n");
 		goto cleanup;
 	}
 
+	if (hv_isolation_type_snp()) {
+		area = get_vm_area(buf_size , VM_IOREMAP);
+		if (!area)
+			goto cleanup;
+
+		vaddr = (unsigned long)area->addr;
+	
+		for (i = 0; i < buf_size / HV_HYP_PAGE_SIZE; i++) {
+			extra_phys = (virt_to_hvpfn(net_device->send_buf + i * HV_HYP_PAGE_SIZE)
+				<< HV_HYP_PAGE_SHIFT) + ms_hyperv.shared_gpa_boundary;
+			ret |= ioremap_page_range(vaddr + i * HV_HYP_PAGE_SIZE,
+					   vaddr + (i + 1) * HV_HYP_PAGE_SIZE,
+					   extra_phys, PAGE_KERNEL_IO);
+		}
+
+		if (ret)
+			goto cleanup;
+
+		net_device->send_original_buf = net_device->send_buf;
+		net_device->send_buf = (void*)vaddr;	
+	}
+
+	
 	/* Notify the NetVsp of the gpadl handle */
 	init_packet = &net_device->channel_init_pkt;
 	memset(init_packet, 0, sizeof(struct nvsp_message));
@@ -783,6 +871,8 @@ static void netvsc_send_tx_complete(struct net_device *ndev,
 		tx_stats->bytes += packet->total_bytes;
 		u64_stats_update_end(&tx_stats->syncp);
 
+		if (desc->type == VM_PKT_COMP && packet->bounce_pkt)
+			hv_pkt_bounce(channel, packet->bounce_pkt);
 		napi_consume_skb(skb, budget);
 	}
 
@@ -987,14 +1077,17 @@ static inline int netvsc_send_pkt(
 
 	trace_nvsp_send_pkt(ndev, out_channel, rpkt);
 
+	packet->bounce_pkt = NULL;
 	if (packet->page_buf_cnt) {
 		if (packet->cp_partial)
 			pb += packet->rmsg_pgcnt;
 
+		/* The I/O type is always 'write' for netvsc */
 		ret = vmbus_sendpacket_pagebuffer(out_channel,
 						  pb, packet->page_buf_cnt,
 						  &nvmsg, sizeof(nvmsg),
-						  req_id);
+						  req_id, IO_TYPE_WRITE,
+						  &packet->bounce_pkt);
 	} else {
 		ret = vmbus_sendpacket(out_channel,
 				       &nvmsg, sizeof(nvmsg),
@@ -1652,8 +1745,6 @@ struct netvsc_device *netvsc_device_add(struct hv_device *device,
 	device->channel->next_request_id_callback = vmbus_next_request_id;
 	device->channel->request_addr_callback = vmbus_request_addr;
 	device->channel->rqstor_size = netvsc_rqstor_size(netvsc_ring_bytes);
-	device->channel->max_pkt_size = NETVSC_MAX_PKT_SIZE;
-
 	ret = vmbus_open(device->channel, netvsc_ring_bytes,
 			 netvsc_ring_bytes,  NULL, 0,
 			 netvsc_channel_cb, net_device->chan_table);

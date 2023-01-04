@@ -97,7 +97,13 @@ int hv_post_message(union hv_connection_id connection_id,
 	aligned_msg->payload_size = payload_size;
 	memcpy((void *)aligned_msg->payload, payload, payload_size);
 
-	status = hv_do_hypercall(HVCALL_POST_MESSAGE, aligned_msg, NULL);
+	if (hv_isolation_type_snp())
+		status = hv_ghcb_hypercall(HVCALL_POST_MESSAGE,
+				(void *)aligned_msg, NULL,
+				sizeof(struct hv_input_post_message));
+	else
+		status = hv_do_hypercall(HVCALL_POST_MESSAGE,
+				aligned_msg, NULL);
 
 	/* Preemption must remain disabled until after the hypercall
 	 * so some other thread can't get scheduled onto this cpu and
@@ -136,17 +142,24 @@ int hv_synic_alloc(void)
 		tasklet_init(&hv_cpu->msg_dpc,
 			     vmbus_on_msg_dpc, (unsigned long) hv_cpu);
 
-		hv_cpu->synic_message_page =
-			(void *)get_zeroed_page(GFP_ATOMIC);
-		if (hv_cpu->synic_message_page == NULL) {
-			pr_err("Unable to allocate SYNIC message page\n");
-			goto err;
-		}
+		/*
+		 * Synic message and event pages are allocated by paravisor.
+		 * Skip these pages allocation here.
+		 */
+		if (!hv_isolation_type_snp()) {
+			hv_cpu->synic_message_page =
+				(void *)get_zeroed_page(GFP_ATOMIC);
+			if (hv_cpu->synic_message_page == NULL) {
+				pr_err("Unable to allocate SYNIC message page\n");
+				goto err;
+			}
 
-		hv_cpu->synic_event_page = (void *)get_zeroed_page(GFP_ATOMIC);
-		if (hv_cpu->synic_event_page == NULL) {
-			pr_err("Unable to allocate SYNIC event page\n");
-			goto err;
+			hv_cpu->synic_event_page =
+				(void *)get_zeroed_page(GFP_ATOMIC);
+			if (hv_cpu->synic_event_page == NULL) {
+				pr_err("Unable to allocate SYNIC event page\n");
+				goto err;
+			}
 		}
 
 		hv_cpu->post_msg_page = (void *)get_zeroed_page(GFP_ATOMIC);
@@ -173,10 +186,17 @@ void hv_synic_free(void)
 	for_each_present_cpu(cpu) {
 		struct hv_per_cpu_context *hv_cpu
 			= per_cpu_ptr(hv_context.cpu_context, cpu);
+		free_page((unsigned long)hv_cpu->post_msg_page);
+
+		/*
+		 * Synic message and event pages are allocated by paravisor.
+		 * Skip free these pages here.
+		 */
+		if (hv_isolation_type_snp())
+			continue;
 
 		free_page((unsigned long)hv_cpu->synic_event_page);
 		free_page((unsigned long)hv_cpu->synic_message_page);
-		free_page((unsigned long)hv_cpu->post_msg_page);
 	}
 
 	kfree(hv_context.hv_numa_map);
@@ -198,49 +218,103 @@ void hv_synic_enable_regs(unsigned int cpu)
 	union hv_synic_sint shared_sint;
 	union hv_synic_scontrol sctrl;
 
-	/* Setup the Synic's message page */
-	simp.as_uint64 = hv_get_register(HV_REGISTER_SIMP);
-	simp.simp_enabled = 1;
-	simp.base_simp_gpa = virt_to_phys(hv_cpu->synic_message_page)
-		>> HV_HYP_PAGE_SHIFT;
-
-	hv_set_register(HV_REGISTER_SIMP, simp.as_uint64);
-
-	/* Setup the Synic's event page */
-	siefp.as_uint64 = hv_get_register(HV_REGISTER_SIEFP);
-	siefp.siefp_enabled = 1;
-	siefp.base_siefp_gpa = virt_to_phys(hv_cpu->synic_event_page)
-		>> HV_HYP_PAGE_SHIFT;
-
-	hv_set_register(HV_REGISTER_SIEFP, siefp.as_uint64);
-
-	/* Setup the shared SINT. */
-	if (vmbus_irq != -1)
-		enable_percpu_irq(vmbus_irq, 0);
-	shared_sint.as_uint64 = hv_get_register(HV_REGISTER_SINT0 +
-					VMBUS_MESSAGE_SINT);
-
-	shared_sint.vector = vmbus_interrupt;
-	shared_sint.masked = false;
-
 	/*
-	 * On architectures where Hyper-V doesn't support AEOI (e.g., ARM64),
-	 * it doesn't provide a recommendation flag and AEOI must be disabled.
+	 * Setup Synic pages for CVM. Synic message and event page
+	 * are allocated by paravisor in the SNP CVM.
 	 */
+	if (hv_isolation_type_snp()) {
+		/* Setup the Synic's message. */
+		hv_get_simp_ghcb(&simp.as_uint64);
+		simp.simp_enabled = 1;
+		hv_cpu->synic_message_page
+			= ioremap_cache(simp.base_simp_gpa << HV_HYP_PAGE_SHIFT,
+					PAGE_SIZE);
+		if (!hv_cpu->synic_message_page)
+			pr_warn("Fail to map syinc message page.\n");
+
+		hv_set_simp_ghcb(simp.as_uint64);
+
+		/* Setup the Synic's event page */
+		hv_get_siefp_ghcb(&siefp.as_uint64);
+		siefp.siefp_enabled = 1;
+		hv_cpu->synic_event_page = ioremap_cache(
+			 siefp.base_siefp_gpa << HV_HYP_PAGE_SHIFT, PAGE_SIZE);
+		if (!hv_cpu->synic_event_page)
+			pr_warn("Fail to map syinc event page.\n");
+		hv_set_siefp_ghcb(siefp.as_uint64);
+
+		/* Setup the shared SINT. */
+		if (vmbus_irq != -1)
+			enable_percpu_irq(vmbus_irq, 0);
+
+		/* Setup the shared SINT. */
+		hv_get_synint_state_ghcb(VMBUS_MESSAGE_SINT,
+					 &shared_sint.as_uint64);		
+		shared_sint.vector = vmbus_interrupt;
+		shared_sint.masked = false;
+
+		/*
+		 * On architectures where Hyper-V doesn't support AEOI (e.g., ARM64),
+		 * it doesn't provide a recommendation flag and AEOI must be disabled.
+		 */
 #ifdef HV_DEPRECATING_AEOI_RECOMMENDED
-	shared_sint.auto_eoi =
-			!(ms_hyperv.hints & HV_DEPRECATING_AEOI_RECOMMENDED);
+		shared_sint.auto_eoi =
+				!(ms_hyperv.hints & HV_DEPRECATING_AEOI_RECOMMENDED);
 #else
-	shared_sint.auto_eoi = 0;
+		shared_sint.auto_eoi = 0;
 #endif
-	hv_set_register(HV_REGISTER_SINT0 + VMBUS_MESSAGE_SINT,
-				shared_sint.as_uint64);
+		hv_set_synint_state_ghcb(VMBUS_MESSAGE_SINT,
+					 shared_sint.as_uint64);
 
-	/* Enable the global synic bit */
-	sctrl.as_uint64 = hv_get_register(HV_REGISTER_SCONTROL);
-	sctrl.enable = 1;
+		/* Enable the global synic bit */
+		hv_get_synic_state_ghcb(&sctrl.as_uint64);
+		sctrl.enable = 1;
+		hv_set_synic_state_ghcb(sctrl.as_uint64);
+	} else {
+		/* Setup the Synic's message page */
+		simp.as_uint64 = hv_get_register(HV_REGISTER_SIMP);
+		simp.simp_enabled = 1;
+		simp.base_simp_gpa = virt_to_phys(hv_cpu->synic_message_page)
+			>> HV_HYP_PAGE_SHIFT;
+	
+		hv_set_register(HV_REGISTER_SIMP, simp.as_uint64);
+	
+		/* Setup the Synic's event page */
+		siefp.as_uint64 = hv_get_register(HV_REGISTER_SIEFP);
+		siefp.siefp_enabled = 1;
+		siefp.base_siefp_gpa = virt_to_phys(hv_cpu->synic_event_page)
+			>> HV_HYP_PAGE_SHIFT;
 
-	hv_set_register(HV_REGISTER_SCONTROL, sctrl.as_uint64);
+		hv_set_register(HV_REGISTER_SIEFP, siefp.as_uint64);
+	
+		/* Setup the shared SINT. */
+		if (vmbus_irq != -1)
+			enable_percpu_irq(vmbus_irq, 0);
+		shared_sint.as_uint64 = hv_get_register(HV_REGISTER_SINT0 +
+						VMBUS_MESSAGE_SINT);
+	
+		shared_sint.vector = vmbus_interrupt;
+		shared_sint.masked = false;
+	
+		/*
+		 * On architectures where Hyper-V doesn't support AEOI (e.g., ARM64),
+		 * it doesn't provide a recommendation flag and AEOI must be disabled.
+		 */
+#ifdef HV_DEPRECATING_AEOI_RECOMMENDED
+		shared_sint.auto_eoi =
+				!(ms_hyperv.hints & HV_DEPRECATING_AEOI_RECOMMENDED);
+#else
+		shared_sint.auto_eoi = 0;
+#endif
+		hv_set_register(HV_REGISTER_SINT0 + VMBUS_MESSAGE_SINT,
+					shared_sint.as_uint64);
+	
+		/* Enable the global synic bit */
+		sctrl.as_uint64 = hv_get_register(HV_REGISTER_SCONTROL);
+		sctrl.enable = 1;
+	
+		hv_set_register(HV_REGISTER_SCONTROL, sctrl.as_uint64);
+	}
 }
 
 int hv_synic_init(unsigned int cpu)
@@ -262,32 +336,55 @@ void hv_synic_disable_regs(unsigned int cpu)
 	union hv_synic_siefp siefp;
 	union hv_synic_scontrol sctrl;
 
-	shared_sint.as_uint64 = hv_get_register(HV_REGISTER_SINT0 +
-					VMBUS_MESSAGE_SINT);
+	if (hv_isolation_type_snp()) {
+		hv_get_synint_state_ghcb(VMBUS_MESSAGE_SINT,
+					 &shared_sint.as_uint64);
+		shared_sint.masked = 1;
+		hv_set_synint_state_ghcb(VMBUS_MESSAGE_SINT,
+					 shared_sint.as_uint64);
 
-	shared_sint.masked = 1;
+		hv_get_simp_ghcb(&simp.as_uint64);
+		simp.simp_enabled = 0;
+		simp.base_simp_gpa = 0;
+		hv_set_simp_ghcb(simp.as_uint64);
 
-	/* Need to correctly cleanup in the case of SMP!!! */
-	/* Disable the interrupt */
-	hv_set_register(HV_REGISTER_SINT0 + VMBUS_MESSAGE_SINT,
-				shared_sint.as_uint64);
+		hv_get_siefp_ghcb(&siefp.as_uint64);
+		siefp.siefp_enabled = 0;
+		siefp.base_siefp_gpa = 0;
+		hv_set_siefp_ghcb(siefp.as_uint64);
 
-	simp.as_uint64 = hv_get_register(HV_REGISTER_SIMP);
-	simp.simp_enabled = 0;
-	simp.base_simp_gpa = 0;
+		/* Disable the global synic bit */
+		hv_get_synic_state_ghcb(&sctrl.as_uint64);
+		sctrl.enable = 0;
+		hv_set_synic_state_ghcb(sctrl.as_uint64);
+	} else {
+		shared_sint.as_uint64 =
+			hv_get_register(HV_REGISTER_SINT0 + VMBUS_MESSAGE_SINT);
 
-	hv_set_register(HV_REGISTER_SIMP, simp.as_uint64);
+	 	shared_sint.masked = 1;
+	
+		/* Need to correctly cleanup in the case of SMP!!! */
+		/* Disable the interrupt */
+		hv_set_register(HV_REGISTER_SINT0 + VMBUS_MESSAGE_SINT,
+					shared_sint.as_uint64);
 
-	siefp.as_uint64 = hv_get_register(HV_REGISTER_SIEFP);
-	siefp.siefp_enabled = 0;
-	siefp.base_siefp_gpa = 0;
-
-	hv_set_register(HV_REGISTER_SIEFP, siefp.as_uint64);
-
-	/* Disable the global synic bit */
-	sctrl.as_uint64 = hv_get_register(HV_REGISTER_SCONTROL);
-	sctrl.enable = 0;
-	hv_set_register(HV_REGISTER_SCONTROL, sctrl.as_uint64);
+		simp.as_uint64 = hv_get_register(HV_REGISTER_SIMP);
+		simp.simp_enabled = 0;
+		simp.base_simp_gpa = 0;
+	
+		hv_set_register(HV_REGISTER_SIMP, simp.as_uint64);
+	
+		siefp.as_uint64 = hv_get_register(HV_REGISTER_SIEFP);
+		siefp.siefp_enabled = 0;
+		siefp.base_siefp_gpa = 0;
+	
+		hv_set_register(HV_REGISTER_SIEFP, siefp.as_uint64);
+	
+		/* Disable the global synic bit */
+		sctrl.as_uint64 = hv_get_register(HV_REGISTER_SCONTROL);
+		sctrl.enable = 0;
+		hv_set_register(HV_REGISTER_SCONTROL, sctrl.as_uint64);
+	}
 
 	if (vmbus_irq != -1)
 		disable_percpu_irq(vmbus_irq);

@@ -17,6 +17,8 @@
 #include <linux/vmalloc.h>
 #include <linux/slab.h>
 #include <linux/prefetch.h>
+#include <linux/io.h>
+#include <asm/mshyperv.h>
 
 #include "hyperv_vmbus.h"
 
@@ -179,42 +181,81 @@ void hv_ringbuffer_pre_init(struct vmbus_channel *channel)
 	mutex_init(&channel->outbound.ring_buffer_mutex);
 }
 
+int hv_ringbuffer_post_init(struct hv_ring_buffer_info *ring_info,
+		       struct page *pages, u32 page_cnt)
+{
+	struct vm_struct *area;
+	u64 physic_addr = page_to_pfn(pages) << PAGE_SHIFT;
+	unsigned long vaddr;
+	int err = 0;
+
+	if (!hv_isolation_type_snp())
+		return 0;
+
+	physic_addr += ms_hyperv.shared_gpa_boundary;
+	area = get_vm_area((2 * page_cnt - 1) * PAGE_SIZE, VM_IOREMAP);
+	if (!area || !area->addr)
+		return -EFAULT;
+
+	vaddr = (unsigned long)area->addr;
+	err = ioremap_page_range(vaddr, vaddr + page_cnt * PAGE_SIZE,
+			   physic_addr, PAGE_KERNEL_IO);
+	err |= ioremap_page_range(vaddr + page_cnt * PAGE_SIZE,
+				  vaddr + (2 * page_cnt - 1) * PAGE_SIZE,
+				  physic_addr + PAGE_SIZE, PAGE_KERNEL_IO);
+	if (err) {
+		vunmap((void *)vaddr);
+		return -EFAULT;
+	}
+
+	/* Clean memory after setting host visibility. */
+	memset((void *)vaddr, 0x00, page_cnt * PAGE_SIZE);
+
+	ring_info->ring_buffer = (struct hv_ring_buffer *)vaddr;
+	ring_info->ring_buffer->read_index = 0;
+	ring_info->ring_buffer->write_index = 0;
+	ring_info->ring_buffer->feature_bits.value = 1;
+
+	return 0;
+}
+
 /* Initialize the ring buffer. */
 int hv_ringbuffer_init(struct hv_ring_buffer_info *ring_info,
-		       struct page *pages, u32 page_cnt, u32 max_pkt_size)
+		       struct page *pages, u32 page_cnt)
 {
 	int i;
 	struct page **pages_wraparound;
 
 	BUILD_BUG_ON((sizeof(struct hv_ring_buffer) != PAGE_SIZE));
 
-	/*
-	 * First page holds struct hv_ring_buffer, do wraparound mapping for
-	 * the rest.
-	 */
-	pages_wraparound = kcalloc(page_cnt * 2 - 1, sizeof(struct page *),
-				   GFP_KERNEL);
-	if (!pages_wraparound)
-		return -ENOMEM;
+	if (!hv_isolation_type_snp()) {
+		/*
+		 * First page holds struct hv_ring_buffer, do wraparound mapping for
+		 * the rest.
+		 */
+		pages_wraparound = kcalloc(page_cnt * 2 - 1, sizeof(struct page *),
+					   GFP_KERNEL);
+		if (!pages_wraparound)
+			return -ENOMEM;
 
-	pages_wraparound[0] = pages;
-	for (i = 0; i < 2 * (page_cnt - 1); i++)
-		pages_wraparound[i + 1] = &pages[i % (page_cnt - 1) + 1];
+		pages_wraparound[0] = pages;
+		for (i = 0; i < 2 * (page_cnt - 1); i++)
+			pages_wraparound[i + 1] = &pages[i % (page_cnt - 1) + 1];
 
-	ring_info->ring_buffer = (struct hv_ring_buffer *)
-		vmap(pages_wraparound, page_cnt * 2 - 1, VM_MAP, PAGE_KERNEL);
+		ring_info->ring_buffer = (struct hv_ring_buffer *)
+			vmap(pages_wraparound, page_cnt * 2 - 1, VM_MAP, PAGE_KERNEL);
 
-	kfree(pages_wraparound);
+		kfree(pages_wraparound);
 
+		if (!ring_info->ring_buffer)
+			return -ENOMEM;
 
-	if (!ring_info->ring_buffer)
-		return -ENOMEM;
+		ring_info->ring_buffer->read_index =
+			ring_info->ring_buffer->write_index = 0;
 
-	ring_info->ring_buffer->read_index =
-		ring_info->ring_buffer->write_index = 0;
-
-	/* Set the feature bit for enabling flow control. */
-	ring_info->ring_buffer->feature_bits.value = 1;
+		/* Set the feature bit for enabling flow control. */
+		ring_info->ring_buffer->feature_bits.value = 1;
+	}
 
 	ring_info->ring_size = page_cnt << PAGE_SHIFT;
 	ring_info->ring_size_div10_reciprocal =
@@ -222,14 +263,6 @@ int hv_ringbuffer_init(struct hv_ring_buffer_info *ring_info,
 	ring_info->ring_datasize = ring_info->ring_size -
 		sizeof(struct hv_ring_buffer);
 	ring_info->priv_read_index = 0;
-
-	/* Initialize buffer that holds copies of incoming packets */
-	if (max_pkt_size) {
-		ring_info->pkt_buffer = kzalloc(max_pkt_size, GFP_KERNEL);
-		if (!ring_info->pkt_buffer)
-			return -ENOMEM;
-		ring_info->pkt_buffer_size = max_pkt_size;
-	}
 
 	spin_lock_init(&ring_info->ring_lock);
 
@@ -243,10 +276,6 @@ void hv_ringbuffer_cleanup(struct hv_ring_buffer_info *ring_info)
 	vunmap(ring_info->ring_buffer);
 	ring_info->ring_buffer = NULL;
 	mutex_unlock(&ring_info->ring_buffer_mutex);
-
-	kfree(ring_info->pkt_buffer);
-	ring_info->pkt_buffer = NULL;
-	ring_info->pkt_buffer_size = 0;
 }
 
 /* Write to the ring buffer. */
@@ -390,7 +419,7 @@ int hv_ringbuffer_read(struct vmbus_channel *channel,
 	memcpy(buffer, (const char *)desc + offset, packetlen);
 
 	/* Advance ring index to next packet descriptor */
-	__hv_pkt_iter_next(channel, desc, true);
+	__hv_pkt_iter_next(channel, desc);
 
 	/* Notify host of update */
 	hv_pkt_iter_close(channel);
@@ -426,22 +455,6 @@ static u32 hv_pkt_iter_avail(const struct hv_ring_buffer_info *rbi)
 }
 
 /*
- * Get first vmbus packet without copying it out of the ring buffer
- */
-struct vmpacket_descriptor *hv_pkt_iter_first_raw(struct vmbus_channel *channel)
-{
-	struct hv_ring_buffer_info *rbi = &channel->inbound;
-
-	hv_debug_delay_test(channel, MESSAGE_DELAY);
-
-	if (hv_pkt_iter_avail(rbi) < sizeof(struct vmpacket_descriptor))
-		return NULL;
-
-	return (struct vmpacket_descriptor *)(hv_get_ring_buffer(rbi) + rbi->priv_read_index);
-}
-EXPORT_SYMBOL_GPL(hv_pkt_iter_first_raw);
-
-/*
  * Get first vmbus packet from ring buffer after read_index
  *
  * If ring buffer is empty, returns NULL and no other action needed.
@@ -449,49 +462,17 @@ EXPORT_SYMBOL_GPL(hv_pkt_iter_first_raw);
 struct vmpacket_descriptor *hv_pkt_iter_first(struct vmbus_channel *channel)
 {
 	struct hv_ring_buffer_info *rbi = &channel->inbound;
-	struct vmpacket_descriptor *desc, *desc_copy;
-	u32 bytes_avail, pkt_len, pkt_offset;
+	struct vmpacket_descriptor *desc;
 
-	desc = hv_pkt_iter_first_raw(channel);
-	if (!desc)
+	hv_debug_delay_test(channel, MESSAGE_DELAY);
+	if (hv_pkt_iter_avail(rbi) < sizeof(struct vmpacket_descriptor))
 		return NULL;
 
-	bytes_avail = min(rbi->pkt_buffer_size, hv_pkt_iter_avail(rbi));
+	desc = hv_get_ring_buffer(rbi) + rbi->priv_read_index;
+	if (desc)
+		prefetch((char *)desc + (desc->len8 << 3));
 
-	/*
-	 * Ensure the compiler does not use references to incoming Hyper-V values (which
-	 * could change at any moment) when reading local variables later in the code
-	 */
-	pkt_len = READ_ONCE(desc->len8) << 3;
-	pkt_offset = READ_ONCE(desc->offset8) << 3;
-
-	/*
-	 * If pkt_len is invalid, set it to the smaller of hv_pkt_iter_avail() and
-	 * rbi->pkt_buffer_size
-	 */
-	if (pkt_len < sizeof(struct vmpacket_descriptor) || pkt_len > bytes_avail)
-		pkt_len = bytes_avail;
-
-	/*
-	 * If pkt_offset is invalid, arbitrarily set it to
-	 * the size of vmpacket_descriptor
-	 */
-	if (pkt_offset < sizeof(struct vmpacket_descriptor) || pkt_offset > pkt_len)
-		pkt_offset = sizeof(struct vmpacket_descriptor);
-
-	/* Copy the Hyper-V packet out of the ring buffer */
-	desc_copy = (struct vmpacket_descriptor *)rbi->pkt_buffer;
-	memcpy(desc_copy, desc, pkt_len);
-
-	/*
-	 * Hyper-V could still change len8 and offset8 after the earlier read.
-	 * Ensure that desc_copy has legal values for len8 and offset8 that
-	 * are consistent with the copy we just made
-	 */
-	desc_copy->len8 = pkt_len >> 3;
-	desc_copy->offset8 = pkt_offset >> 3;
-
-	return desc_copy;
+	return desc;
 }
 EXPORT_SYMBOL_GPL(hv_pkt_iter_first);
 
@@ -503,8 +484,7 @@ EXPORT_SYMBOL_GPL(hv_pkt_iter_first);
  */
 struct vmpacket_descriptor *
 __hv_pkt_iter_next(struct vmbus_channel *channel,
-		   const struct vmpacket_descriptor *desc,
-		   bool copy)
+		   const struct vmpacket_descriptor *desc)
 {
 	struct hv_ring_buffer_info *rbi = &channel->inbound;
 	u32 packetlen = desc->len8 << 3;
@@ -517,7 +497,7 @@ __hv_pkt_iter_next(struct vmbus_channel *channel,
 		rbi->priv_read_index -= dsize;
 
 	/* more data? */
-	return copy ? hv_pkt_iter_first(channel) : hv_pkt_iter_first_raw(channel);
+	return hv_pkt_iter_first(channel);
 }
 EXPORT_SYMBOL_GPL(__hv_pkt_iter_next);
 

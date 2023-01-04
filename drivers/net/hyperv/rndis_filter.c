@@ -1260,8 +1260,6 @@ static void netvsc_sc_open(struct vmbus_channel *new_sc)
 	new_sc->next_request_id_callback = vmbus_next_request_id;
 	new_sc->request_addr_callback = vmbus_request_addr;
 	new_sc->rqstor_size = netvsc_rqstor_size(netvsc_ring_bytes);
-	new_sc->max_pkt_size = NETVSC_MAX_PKT_SIZE;
-
 	ret = vmbus_open(new_sc, netvsc_ring_bytes,
 			 netvsc_ring_bytes, NULL, 0,
 			 netvsc_channel_cb, nvchan);
@@ -1272,6 +1270,8 @@ static void netvsc_sc_open(struct vmbus_channel *new_sc)
 
 	if (atomic_inc_return(&nvscdev->open_chn) == nvscdev->num_chn)
 		wake_up(&nvscdev->subchan_open);
+
+	hv_bounce_resources_reserve(new_sc, PAGE_SIZE * 4096);
 }
 
 /* Open sub-channels after completing the handling of the device probe.

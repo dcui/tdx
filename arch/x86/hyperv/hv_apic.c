@@ -144,8 +144,10 @@ static bool __send_ipi_mask_ex(const struct cpumask *mask, int vector,
 		ipi_arg->vp_set.format = HV_GENERIC_SET_ALL;
 	}
 
-	status = hv_do_rep_hypercall(HVCALL_SEND_IPI_EX, 0, nr_bank,
-			      ipi_arg, NULL);
+	do {
+		ret = hv_do_rep_hypercall(HVCALL_SEND_IPI_EX, 0, nr_bank,
+					ipi_arg, NULL);
+	} while (ret == 0x78);
 
 ipi_mask_ex_done:
 	local_irq_restore(flags);
@@ -212,9 +214,12 @@ static bool __send_ipi_mask(const struct cpumask *mask, int vector,
 		__set_bit(vcpu, (unsigned long *)&ipi_arg.cpu_mask);
 	}
 
-	status = hv_do_fast_hypercall16(HVCALL_SEND_IPI, ipi_arg.vector,
-				     ipi_arg.cpu_mask);
-	return hv_result_success(status);
+	do {
+		ret = hv_do_fast_hypercall16(HVCALL_SEND_IPI, ipi_arg.vector,
+						ipi_arg.cpu_mask);
+	} while (ret == 0x78);
+
+	return ((ret == 0) ? true : false);
 
 do_ex_hypercall:
 	return __send_ipi_mask_ex(mask, vector, exclude_self);
@@ -224,6 +229,7 @@ static bool __send_ipi_one(int cpu, int vector)
 {
 	int vp = hv_cpu_number_to_vp_number(cpu);
 	u64 status;
+	int ret;
 
 	trace_hyperv_send_ipi_one(cpu, vector);
 
@@ -236,26 +242,48 @@ static bool __send_ipi_one(int cpu, int vector)
 	if (vp >= 64)
 		return __send_ipi_mask_ex(cpumask_of(cpu), vector, false);
 
-	status = hv_do_fast_hypercall16(HVCALL_SEND_IPI, vector, BIT_ULL(vp));
-	return hv_result_success(status);
+	do {
+		ret = hv_do_fast_hypercall16(HVCALL_SEND_IPI, vector, BIT_ULL(vp));
+	} while (ret == 0x78);
+
+	return ((ret == 0) ? true : false);
 }
 
 static void hv_send_ipi(int cpu, int vector)
 {
-	if (!__send_ipi_one(cpu, vector))
-		orig_apic.send_IPI(cpu, vector);
+	if (!__send_ipi_one(cpu, vector)) {
+		if (!hv_isolation_type_snp())
+			orig_apic.send_IPI(cpu, vector);
+		else
+			BUG();
+	}
 }
 
 static void hv_send_ipi_mask(const struct cpumask *mask, int vector)
 {
-	if (!__send_ipi_mask(mask, vector, false))
-		orig_apic.send_IPI_mask(mask, vector);
+	if (!__send_ipi_mask(mask, vector)) {
+		if (!hv_isolation_type_snp())
+			orig_apic.send_IPI_mask(mask, vector);
+		else
+			BUG();
+	}
 }
 
 static void hv_send_ipi_mask_allbutself(const struct cpumask *mask, int vector)
 {
-	if (!__send_ipi_mask(mask, vector, true))
-		orig_apic.send_IPI_mask_allbutself(mask, vector);
+	unsigned int this_cpu = smp_processor_id();
+	struct cpumask new_mask;
+	const struct cpumask *local_mask;
+
+	cpumask_copy(&new_mask, mask);
+	cpumask_clear_cpu(this_cpu, &new_mask);
+	local_mask = &new_mask;
+	if (!__send_ipi_mask(local_mask, vector)) {
+		if (!hv_isolation_type_snp())
+			orig_apic.send_IPI_mask_allbutself(mask, vector);
+		else
+			BUG();
+	}
 }
 
 static void hv_send_ipi_allbutself(int vector)
@@ -265,14 +293,22 @@ static void hv_send_ipi_allbutself(int vector)
 
 static void hv_send_ipi_all(int vector)
 {
-	if (!__send_ipi_mask(cpu_online_mask, vector, false))
-		orig_apic.send_IPI_all(vector);
+	if (!__send_ipi_mask(cpu_online_mask, vector)) {
+		if (!hv_isolation_type_snp())
+			orig_apic.send_IPI_all(vector);
+		else
+			BUG();
+	}
 }
 
 static void hv_send_ipi_self(int vector)
 {
-	if (!__send_ipi_one(smp_processor_id(), vector))
-		orig_apic.send_IPI_self(vector);
+	if (!__send_ipi_one(smp_processor_id(), vector)) {
+		if (!hv_isolation_type_snp())
+			orig_apic.send_IPI_self(vector);
+		else
+			BUG();
+	}
 }
 
 void __init hv_apic_init(void)

@@ -336,6 +336,18 @@ fw_error:
 EXPORT_SYMBOL_GPL(vmbus_prep_negotiate_resp);
 
 /*
+ * free_channel - Release the resources used by the vmbus channel object
+ */
+static void free_channel(struct vmbus_channel *channel)
+{
+	tasklet_kill(&channel->callback_event);
+	vmbus_remove_channel_attr_group(channel);
+
+	kobject_put(&channel->kobj);
+	hv_free_channel_ivm(channel);
+}
+
+/*
  * alloc_channel - Allocate and initialize a vmbus channel object
  */
 static struct vmbus_channel *alloc_channel(void)
@@ -346,6 +358,7 @@ static struct vmbus_channel *alloc_channel(void)
 	if (!channel)
 		return NULL;
 
+	spin_lock_init(&channel->bp_lock);
 	spin_lock_init(&channel->sched_lock);
 	init_completion(&channel->rescind_event);
 
@@ -357,17 +370,6 @@ static struct vmbus_channel *alloc_channel(void)
 	hv_ringbuffer_pre_init(channel);
 
 	return channel;
-}
-
-/*
- * free_channel - Release the resources used by the vmbus channel object
- */
-static void free_channel(struct vmbus_channel *channel)
-{
-	tasklet_kill(&channel->callback_event);
-	vmbus_remove_channel_attr_group(channel);
-
-	kobject_put(&channel->kobj);
 }
 
 void vmbus_channel_map_relid(struct vmbus_channel *channel)
@@ -509,6 +511,8 @@ static void vmbus_add_channel_work(struct work_struct *work)
 		if (vmbus_add_channel_kobj(dev, newchannel))
 			goto err_deq_chan;
 
+		hv_init_channel_ivm(newchannel);
+
 		if (primary_channel->sc_creation_callback != NULL)
 			primary_channel->sc_creation_callback(newchannel);
 
@@ -527,6 +531,10 @@ static void vmbus_add_channel_work(struct work_struct *work)
 		goto err_deq_chan;
 
 	newchannel->device_obj->device_id = newchannel->device_id;
+
+	if (hv_init_channel_ivm(newchannel))
+		goto err_deq_chan;
+
 	/*
 	 * Add the new device to the bus. This will kick off device-driver
 	 * binding which eventually invokes the device driver's AddDevice()
@@ -542,6 +550,7 @@ static void vmbus_add_channel_work(struct work_struct *work)
 	}
 
 	newchannel->probe_done = true;
+
 	return;
 
 err_deq_chan:
@@ -980,9 +989,20 @@ find_primary_channel_by_offer(const struct vmbus_channel_offer_channel *offer)
 static bool vmbus_is_valid_device(const guid_t *guid)
 {
 	u16 i;
+	static const guid_t srv_id_template =
+		GUID_INIT(0x00000000, 0xfacb, 0x11e6, 0xbd, 0x58,
+			  0x64, 0x00, 0x6a, 0x79, 0x86, 0xd3);
 
 	if (!hv_is_isolation_supported())
 		return true;
+
+	if (memcmp(&guid->b[4], &srv_id_template.b[4], sizeof(guid_t) - 4) == 0) {
+		/*
+		 * do no print these message to the hypervisor
+		printk("%s:%d (%s): vsock!\n", __FILE__, __LINE__, __func__);
+		*/
+		return true;
+	}
 
 	for (i = 0; i < ARRAY_SIZE(vmbus_devs); i++) {
 		if (guid_equal(guid, &vmbus_devs[i].guid))
