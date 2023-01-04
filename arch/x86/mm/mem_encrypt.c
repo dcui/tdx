@@ -31,6 +31,7 @@
 #include <asm/processor-flags.h>
 #include <asm/msr.h>
 #include <asm/cmdline.h>
+#include <asm/sev-snp.h>
 
 #include "mm_internal.h"
 
@@ -48,6 +49,27 @@ EXPORT_SYMBOL_GPL(sev_enable_key);
 
 /* Buffer used for early in-place encryption by BSP, no locking needed */
 static char sme_early_buffer[PAGE_SIZE] __initdata __aligned(PAGE_SIZE);
+
+/*
+ * When SNP is active, this routine changes the page state from private to shared before
+ * copying the data from the source to destination and restore after the copy. This is required
+ * because the source address is mapped as decrypted by the caller of the routine.
+ */
+static inline void __init snp_aware_memcpy(void *dst, void *src, size_t sz,
+					   unsigned long paddr, bool dec)
+{
+	unsigned long npages = PAGE_ALIGN(sz) >> PAGE_SHIFT;
+
+	/* If the paddr need to accessed decrypted, make the page shared before memcpy. */
+	if (sev_snp_active() && dec)
+		early_snp_set_memory_shared((unsigned long)__va(paddr), paddr, npages);
+
+	memcpy(dst, src, sz);
+
+	/* Restore the page state after the memcpy. */
+	if (sev_snp_active() && dec)
+		early_snp_set_memory_private((unsigned long)__va(paddr), paddr, npages);
+}
 
 /*
  * This routine does not change the underlying encryption setting of the
@@ -97,8 +119,8 @@ static void __init __sme_early_enc_dec(resource_size_t paddr,
 		 * Use a temporary buffer, of cache-line multiple size, to
 		 * avoid data corruption as documented in the APM.
 		 */
-		memcpy(sme_early_buffer, src, len);
-		memcpy(dst, sme_early_buffer, len);
+		snp_aware_memcpy(sme_early_buffer, src, len, paddr, enc);
+		snp_aware_memcpy(dst, sme_early_buffer, len, paddr, !enc);
 
 		early_memunmap(dst, len);
 		early_memunmap(src, len);
@@ -278,9 +300,23 @@ static void __init __set_clr_pte_enc(pte_t *kpte, int level, bool enc)
 	else
 		sme_early_decrypt(pa, size);
 
+	/*
+	 * If SEV-SNP is active, rescind validation of the page in the RMP entry before encryption
+	 * attribute is changed from C=1 to C=0.
+	 */
+	if (sev_snp_active() && !enc)
+		early_snp_set_memory_shared((unsigned long)__va(pa), pa, 1);
+
 	/* Change the page encryption mask. */
 	new_pte = pfn_pte(pfn, new_prot);
 	set_pte_atomic(kpte, new_pte);
+
+	/*
+	 * If SEV-SNP is active, validate the page in the RMP entry after encryption attribute is
+	 * changed from C=0 to C=1.
+	 */
+	if (sev_snp_active() && enc)
+		early_snp_set_memory_private((unsigned long)__va(pa), pa, 1);
 }
 
 static int __init early_set_memory_enc_dec(unsigned long vaddr,
@@ -390,6 +426,31 @@ bool noinstr sev_es_active(void)
 	return sev_status & MSR_AMD64_SEV_ES_ENABLED;
 }
 
+bool sev_snp_active(void)
+{
+	return sev_status & MSR_AMD64_SEV_SNP_ENABLED;
+}
+
+bool noinstr sev_vtom_enabled(void)
+{
+	return sev_status & MSR_AMD64_SEV_VTOM_ENABLED;
+}
+
+bool noinstr sev_reflectvc_enabled(void)
+{
+	return sev_status & MSR_AMD64_SEV_REFLECTVC_ENABLED;
+}
+
+bool noinstr sev_restricted_injection_enabled(void)
+{
+	return sev_status & MSR_AMD64_SEV_RESTRICTED_INJECTION_ENABLED;
+}
+
+bool noinstr sev_alternate_injection_enabled(void)
+{
+	return sev_status & MSR_AMD64_SEV_ALTERNATE_INJECTION_ENABLED;
+}
+
 /* Override for DMA direct allocation check - ARCH_HAS_FORCE_DMA_UNENCRYPTED */
 bool force_dma_unencrypted(struct device *dev)
 {
@@ -461,6 +522,10 @@ static void print_mem_encrypt_feature_info(void)
 	/* Encrypted Register State */
 	if (sev_es_active())
 		pr_cont(" SEV-ES");
+
+	/* Secure Nested Paging */
+	if (sev_snp_active())
+		pr_cont(" SEV-SNP");
 
 	pr_cont("\n");
 }

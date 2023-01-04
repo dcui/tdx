@@ -73,7 +73,7 @@ static void sme_sev_setup_real_mode(struct trampoline_header *th)
 	if (sme_active())
 		th->flags |= TH_FLAGS_SME_ACTIVE;
 
-	if (sev_es_active()) {
+	if (sev_es_active() && !sev_snp_active()) {
 		/*
 		 * Skip the call to verify_cpu() in secondary_startup_64 as it
 		 * will cause #VC exceptions when the AP can't handle them yet.

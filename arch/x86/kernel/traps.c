@@ -1196,4 +1196,7 @@ void __init trap_init(void)
 	/* Setup traps as cpu_init() might #GP */
 	idt_setup_traps();
 	cpu_init();
+
+	/* Init #HV doorbell pages when running as an SEV-SNP guest */
+	sev_snp_init_hv_handling();
 }

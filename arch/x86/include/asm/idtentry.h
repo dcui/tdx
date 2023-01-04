@@ -315,6 +315,9 @@ static __always_inline void __##func(struct pt_regs *regs)
 	__visible noinstr void kernel_##func(struct pt_regs *regs, unsigned long error_code);	\
 	__visible noinstr void   user_##func(struct pt_regs *regs, unsigned long error_code)
 
+#define DECLARE_IDTENTRY_HV(vector, func)				\
+	DECLARE_IDTENTRY_RAW(vector, func);
+
 /**
  * DEFINE_IDTENTRY_IST - Emit code for IST entry points
  * @func:	Function name of the entry point
@@ -373,6 +376,9 @@ static __always_inline void __##func(struct pt_regs *regs)
  */
 #define DEFINE_IDTENTRY_VC_USER(func)				\
 	DEFINE_IDTENTRY_RAW_ERRORCODE(user_##func)
+
+#define DEFINE_IDTENTRY_HV(func)					\
+	DEFINE_IDTENTRY_RAW(func)
 
 #else	/* CONFIG_X86_64 */
 
@@ -462,6 +468,9 @@ __visible noinstr void func(struct pt_regs *regs,			\
 
 # define DECLARE_IDTENTRY_VC(vector, func)				\
 	idtentry_vc vector asm_##func func
+
+# define DECLARE_IDTENTRY_HV(vector, func)				\
+	idtentry_hv vector asm_##func func
 
 #else
 # define DECLARE_IDTENTRY_MCE(vector, func)				\
@@ -618,6 +627,7 @@ DECLARE_IDTENTRY_RAW_ERRORCODE(X86_TRAP_DF,	xenpv_exc_double_fault);
 /* #VC */
 #ifdef CONFIG_AMD_MEM_ENCRYPT
 DECLARE_IDTENTRY_VC(X86_TRAP_VC,	exc_vmm_communication);
+DECLARE_IDTENTRY_HV(X86_TRAP_HV,	exc_hv);
 #endif
 
 #ifdef CONFIG_XEN_PV

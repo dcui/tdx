@@ -14,6 +14,89 @@
 #define has_cpuflag(f)	boot_cpu_has(f)
 #endif
 
+struct sev_snp_cpuid_leaf
+{
+	u32 eax_in;
+	u32 ecx_in;
+	u64 xfem_in;
+	u64 xss_in;
+	u32 eax_out;
+	u32 ebx_out;
+	u32 ecx_out;
+	u32 edx_out;
+	u64 reserved;
+};
+
+#define SEV_SNP_CPUID_LEAF_COUNT_MAX	64
+
+struct sev_snp_cpuid_page
+{
+	u32 count;
+	u32 reserved1;
+	u64 reserved2;
+	struct sev_snp_cpuid_leaf cpuid_leaf_info[SEV_SNP_CPUID_LEAF_COUNT_MAX];
+};
+
+struct sev_snp_cpuid_page psp_cpuid_page = { .count = -1 };
+
+static bool lookup_cpuid_page(struct pt_regs *regs)
+{
+	struct sev_snp_cpuid_page *cpuid_page;
+	u32 eax_in = lower_bits(regs->ax, 32);
+	u32 ecx_in = lower_bits(regs->cx, 32);
+	bool found = false;
+	int i;
+
+	if (eax_in < 0xb)
+		ecx_in = 0;
+
+#ifdef __BOOT_COMPRESSED
+	cpuid_page = (struct sev_snp_cpuid_page *)0x800000;
+#else
+	asm volatile ("leaq psp_cpuid_page(%%rip), %0" : "=r" (cpuid_page));
+	if (cpuid_page->count == -1)
+		memcpy(cpuid_page, (struct sev_snp_cpuid_page *)0x800000, sizeof(*cpuid_page));
+#endif
+
+	for (i = 0; i < cpuid_page->count; i++) {
+		if (eax_in == cpuid_page->cpuid_leaf_info[i].eax_in &&
+				ecx_in == cpuid_page->cpuid_leaf_info[i].ecx_in) {
+			found = true;
+			regs->ax = cpuid_page->cpuid_leaf_info[i].eax_out;
+			regs->bx = cpuid_page->cpuid_leaf_info[i].ebx_out;
+			regs->cx = cpuid_page->cpuid_leaf_info[i].ecx_out;
+			regs->dx = cpuid_page->cpuid_leaf_info[i].edx_out;
+			break;
+		}
+	}
+
+#ifndef __BOOT_COMPRESSED
+	if (!found) {
+		if (0x40000000 <= eax_in && eax_in <= 0x4fffffff) {
+			return false;
+		} else {
+			regs->ax = 0;
+			regs->bx = 0;
+			regs->cx = 0;
+			regs->dx = 0;
+		}
+	}
+#endif
+
+	if (eax_in == 1) {
+		regs->cx |= BIT(31); /* Inside a VM */
+		regs->cx &= ~BIT(26); /* No XSAVE */
+		regs->cx &= ~BIT(21); /* No x2apic */
+	} else if (eax_in == 0xd) { /* No extended state support */
+		regs->ax = 0;
+		regs->bx = 0;
+		regs->cx = 0;
+		regs->dx = 0;
+	}
+
+	return true;
+}
+
 static bool __init sev_es_check_cpu_features(void)
 {
 	if (!has_cpuflag(X86_FEATURE_RDRAND)) {
@@ -94,10 +177,10 @@ static void vc_finish_insn(struct es_em_ctxt *ctxt)
 	ctxt->regs->ip += ctxt->insn.length;
 }
 
-static enum es_result sev_es_ghcb_hv_call(struct ghcb *ghcb,
-					  struct es_em_ctxt *ctxt,
-					  u64 exit_code, u64 exit_info_1,
-					  u64 exit_info_2)
+enum es_result sev_es_ghcb_hv_call(struct ghcb *ghcb,
+				   struct es_em_ctxt *ctxt,
+				   u64 exit_code, u64 exit_info_1,
+				   u64 exit_info_2)
 {
 	enum es_result ret;
 
@@ -123,9 +206,11 @@ static enum es_result sev_es_ghcb_hv_call(struct ghcb *ghcb,
 		if ((info & SVM_EVTINJ_VALID) &&
 		    ((v == X86_TRAP_GP) || (v == X86_TRAP_UD)) &&
 		    ((info & SVM_EVTINJ_TYPE_MASK) == SVM_EVTINJ_TYPE_EXEPT)) {
-			ctxt->fi.vector = v;
-			if (info & SVM_EVTINJ_VALID_ERR)
-				ctxt->fi.error_code = info >> 32;
+			if (ctxt) {
+				ctxt->fi.vector = v;
+				if (info & SVM_EVTINJ_VALID_ERR)
+					ctxt->fi.error_code = info >> 32;
+			}
 			ret = ES_EXCEPTION;
 		} else {
 			ret = ES_VMM_ERROR;
@@ -137,6 +222,22 @@ static enum es_result sev_es_ghcb_hv_call(struct ghcb *ghcb,
 	}
 
 	return ret;
+}
+
+static inline bool sev_snp_active_msr(void)
+{
+	unsigned long low, high;
+	u64 val;
+
+	asm volatile("rdmsr\n" : "=a" (low), "=d" (high) :
+			"c" (MSR_AMD64_SEV));
+
+	val = (high << 32) | low;
+
+	if (val & MSR_AMD64_SEV_SNP_ENABLED)
+		return true;
+
+	return false;
 }
 
 /*
@@ -152,6 +253,14 @@ void __init do_vc_no_ghcb(struct pt_regs *regs, unsigned long exit_code)
 	/* Only CPUID is supported via MSR protocol */
 	if (exit_code != SVM_EXIT_CPUID)
 		goto fail;
+
+	if (sev_snp_active_msr()) {
+		regs->cx = 0;
+		if (lookup_cpuid_page(regs)) {
+			regs->ip += 2;
+			return;
+		}
+	}
 
 	sev_es_wr_ghcb_msr(GHCB_CPUID_REQ(fn, GHCB_CPUID_REQ_EAX));
 	VMGEXIT();
@@ -381,6 +490,9 @@ static enum es_result vc_handle_ioio(struct ghcb *ghcb, struct es_em_ctxt *ctxt)
 		unsigned long es_base;
 		u64 sw_scratch;
 
+		if (sev_snp_active_msr())
+			return ES_UNSUPPORTED;
+
 		/*
 		 * For the string variants with rep prefix the amount of in/out
 		 * operations per #VC exception is limited so that the kernel
@@ -450,6 +562,12 @@ static enum es_result vc_handle_ioio(struct ghcb *ghcb, struct es_em_ctxt *ctxt)
 		int bits = (exit_info_1 & 0x70) >> 1;
 		u64 rax = 0;
 
+		if (sev_snp_active_msr()) {
+			if (exit_info_1 & IOIO_TYPE_IN)
+				regs->ax = lower_bits(0xffffffff, bits);
+			return ES_OK;
+		}
+
 		if (!(exit_info_1 & IOIO_TYPE_IN))
 			rax = lower_bits(regs->ax, bits);
 
@@ -475,6 +593,9 @@ static enum es_result vc_handle_cpuid(struct ghcb *ghcb,
 	struct pt_regs *regs = ctxt->regs;
 	u32 cr4 = native_read_cr4();
 	enum es_result ret;
+
+	if (sev_snp_active_msr() && lookup_cpuid_page(regs))
+		return ES_OK;
 
 	ghcb_set_rax(ghcb, regs->ax);
 	ghcb_set_rcx(ghcb, regs->cx);
