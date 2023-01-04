@@ -21,3 +21,7 @@ ccp-crypto-objs := ccp-crypto-main.o \
 		   ccp-crypto-des3.o \
 		   ccp-crypto-rsa.o \
 		   ccp-crypto-sha.o
+
+obj-$(CONFIG_CRYPTO_DEV_SEV_GUEST_DD) += sev-guest.o
+sev-guest-objs := sev-dev-guest.o
+

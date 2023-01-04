@@ -129,7 +129,7 @@ void vmbus_setevent(struct vmbus_channel *channel)
 	 * For channels marked as in "low latency" mode
 	 * bypass the monitor page mechanism.
 	 */
-	if (channel->offermsg.monitor_allocated && !channel->low_latency) {
+	if (!hv_isolation_type_snp() && channel->offermsg.monitor_allocated && !channel->low_latency) {
 		vmbus_send_interrupt(channel->offermsg.child_relid);
 
 		/* Get the child to parent monitor page */

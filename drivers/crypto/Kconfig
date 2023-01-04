@@ -590,7 +590,7 @@ config CRYPTO_DEV_ATMEL_SHA204A
 
 config CRYPTO_DEV_CCP
 	bool "Support for AMD Secure Processor"
-	depends on ((X86 && PCI) || (ARM64 && (OF_ADDRESS || ACPI))) && HAS_IOMEM
+	depends on ((X86 && (PCI || AMD_MEM_ENCRYPT)) || (ARM64 && (OF_ADDRESS || ACPI))) && HAS_IOMEM
 	help
 	  The AMD Secure Processor provides support for the Cryptographic Coprocessor
 	  (CCP) and the Platform Security Processor (PSP) devices.
