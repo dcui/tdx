@@ -258,6 +258,11 @@ bool hv_is_isolation_supported(void)
 	return hv_get_isolation_type() != HV_ISOLATION_TYPE_NONE;
 }
 
+bool hv_set_memory_enc_dec_needed(void)
+{
+	return hv_is_isolation_supported() && !hv_isolation_type_tdx();
+}
+
 DEFINE_STATIC_KEY_FALSE(isolation_type_snp);
 
 /*
