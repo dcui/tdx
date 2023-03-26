@@ -29,7 +29,6 @@
 #include <linux/syscore_ops.h>
 #include <clocksource/hyperv_timer.h>
 #include <linux/highmem.h>
-#include <linux/swiotlb.h>
 
 int hyperv_init_cpuhp;
 u64 hv_current_partition_id = ~0ull;
@@ -521,19 +520,6 @@ skip_hypercall_pg_init:
 
 	/* Query the VMs extended capability once, so that it can be cached. */
 	hv_query_ext_cap(0);
-
-#ifdef CONFIG_SWIOTLB
-	/*
-	 * Swiotlb bounce buffer needs to be mapped in extra address
-	 * space. Map function doesn't work in the early place and so
-	 * call swiotlb_update_mem_attributes() here.
-	 *
-	 *  Refer to mem_encrypt_init(), which runs before hyperv_init().
-	 */
-	if (hv_is_isolation_supported() &&
-	    !cc_platform_has(CC_ATTR_MEM_ENCRYPT))
-		swiotlb_update_mem_attributes();
-#endif
 
 	return;
 
