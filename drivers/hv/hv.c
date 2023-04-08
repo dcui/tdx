@@ -85,14 +85,15 @@ int hv_post_message(union hv_connection_id connection_id,
 		  void *payload, size_t payload_size)
 {
 	struct hv_input_post_message *aligned_msg;
-	struct hv_per_cpu_context *hv_cpu;
+	unsigned long flags;
 	u64 status;
 
 	if (payload_size > HV_MESSAGE_PAYLOAD_BYTE_COUNT)
 		return -EMSGSIZE;
 
-	hv_cpu = get_cpu_ptr(hv_context.cpu_context);
-	aligned_msg = hv_cpu->post_msg_page;
+	local_irq_save(flags);
+
+	aligned_msg = *this_cpu_ptr(hyperv_pcpu_input_arg);
 	aligned_msg->connectionid = connection_id;
 	aligned_msg->reserved = 0;
 	aligned_msg->message_type = message_type;
@@ -107,11 +108,7 @@ int hv_post_message(union hv_connection_id connection_id,
 		status = hv_do_hypercall(HVCALL_POST_MESSAGE,
 				aligned_msg, NULL);
 
-	/* Preemption must remain disabled until after the hypercall
-	 * so some other thread can't get scheduled onto this cpu and
-	 * corrupt the per-cpu post_msg_page
-	 */
-	put_cpu_ptr(hv_cpu);
+	local_irq_restore(flags);
 
 	return hv_result(status);
 }
@@ -165,13 +162,6 @@ int hv_synic_alloc(void)
 			}
 		}
 
-		hv_cpu->post_msg_page = (void *)get_zeroed_page(GFP_ATOMIC);
-		if (hv_cpu->post_msg_page == NULL) {
-			pr_err("Unable to allocate post msg page\n");
-			goto err;
-		}
-
-
 		if (hv_isolation_type_tdx()) {
 			ret = set_memory_decrypted(
 				(unsigned long)hv_cpu->synic_message_page, 1);
@@ -184,13 +174,6 @@ int hv_synic_alloc(void)
 				(unsigned long)hv_cpu->synic_event_page, 1);
 			if (ret) {
 				pr_err("Failed to decrypt SYNIC event page\n");
-				goto err;
-			}
-
-			ret = set_memory_decrypted(
-				(unsigned long)hv_cpu->post_msg_page, 1);
-			if (ret) {
-				pr_err("Failed to decrypt post msg page\n");
 				goto err;
 			}
 		}
@@ -229,18 +212,10 @@ void hv_synic_free(void)
 				pr_err("Failed to encrypt SYNIC event page\n");
 				continue;
 			}
-
-			ret = set_memory_encrypted(
-				(unsigned long)hv_cpu->post_msg_page, 1);
-			if (ret) {
-				pr_err("Failed to encrypt post msg page\n");
-				continue;
-			}
 		}
 
 		free_page((unsigned long)hv_cpu->synic_event_page);
 		free_page((unsigned long)hv_cpu->synic_message_page);
-		free_page((unsigned long)hv_cpu->post_msg_page);
 	}
 
 	kfree(hv_context.hv_numa_map);
