@@ -2174,11 +2174,19 @@ static acpi_status vmbus_walk_resources(struct acpi_resource *res, void *ctx)
 	case ACPI_RESOURCE_TYPE_ADDRESS32:
 		start = res->data.address32.address.minimum;
 		end = res->data.address32.address.maximum;
+                printk("cdx: vmbus_walk_resources: mem32: %llx, %llx\n", start, end);
+                start = 0xf8000000;
+                end = 0xffffffff;
+                printk("cdx: vmbus_walk_resources: mem32-2: %llx, %llx\n", start, end);
 		break;
 
 	case ACPI_RESOURCE_TYPE_ADDRESS64:
 		start = res->data.address64.address.minimum;
 		end = res->data.address64.address.maximum;
+                printk("cdx: vmbus_walk_resources: mem64: %llx, %llx\n", start, end);
+                start = 0xfe0000000;
+                end = 0xfffffffff;
+                printk("cdx: vmbus_walk_resources: mem64-2: %llx, %llx\n", start, end);
 		break;
 
 	/*
@@ -2196,10 +2204,12 @@ static acpi_status vmbus_walk_resources(struct acpi_resource *res, void *ctx)
 		vmbus_interrupt = res->data.extended_irq.interrupts[0];
 		/* Linux IRQ number */
 		vmbus_irq = r.start;
+               printk("cdx: vmbus_walk_resources: irq=%d\n", vmbus_irq);
 		return AE_OK;
 
 	default:
 		/* Unused resource type */
+               printk("cdx: vmbus_walk_resources: default type=%d\n", res->type);
 		return AE_OK;
 
 	}
