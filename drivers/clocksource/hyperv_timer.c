@@ -502,6 +502,16 @@ static __always_inline void hv_setup_sched_clock(void *sched_clock)
 static __always_inline void hv_setup_sched_clock(void *sched_clock) {}
 #endif /* CONFIG_GENERIC_SCHED_CLOCK */
 
+static u64 tsc_freq __ro_after_init;
+static u64 initial_tsc __ro_after_init;
+static u64 notrace read_hw_tsc(void)
+{
+	u64 current_tsc = rdtsc_ordered();
+	u64 ret = div64_u64((current_tsc - initial_tsc)*10000000, tsc_freq) + hv_sched_clock_offset;
+
+	return ret;;
+}
+
 static bool __init hv_init_tsc_clocksource(void)
 {
 	union hv_reference_tsc_msr tsc_msr;
@@ -520,6 +530,16 @@ static bool __init hv_init_tsc_clocksource(void)
 	if (ms_hyperv.features & HV_ACCESS_TSC_INVARIANT) {
 		hyperv_cs_tsc.rating = 250;
 		hyperv_cs_msr.rating = 250;
+
+		/*
+		 * When Invariant-TSC is available, there is no need to use
+		 * Hyper-V Reference TSC page and Hyper-V Reference MSR counter.
+		 */
+		rdmsrl(HV_X64_MSR_TSC_FREQUENCY, tsc_freq);
+		rdmsrl(HV_REGISTER_TIME_REF_COUNT, hv_sched_clock_offset);
+		initial_tsc = rdtsc_ordered(); //XXX: fix the ARM64 build?
+		hv_read_reference_counter = read_hw_tsc;
+		return true;
 	}
 
 	if (!(ms_hyperv.features & HV_MSR_REFERENCE_TSC_AVAILABLE))
