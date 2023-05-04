@@ -24,6 +24,7 @@
 #include <linux/kmsg_dump.h>
 #include <linux/slab.h>
 #include <linux/dma-map-ops.h>
+#include <linux/set_memory.h>
 #include <asm/hyperv-tlfs.h>
 #include <asm/mshyperv.h>
 
@@ -359,6 +360,7 @@ int hv_common_cpu_init(unsigned int cpu)
 	u64 msr_vp_index;
 	gfp_t flags;
 	int pgcount = hv_root_partition ? 2 : 1;
+	int ret;
 
 	/* hv_cpu_init() can be called with IRQs disabled from hv_resume() */
 	flags = irqs_disabled() ? GFP_ATOMIC : GFP_KERNEL;
@@ -367,6 +369,17 @@ int hv_common_cpu_init(unsigned int cpu)
 	*inputarg = kmalloc(pgcount * HV_HYP_PAGE_SIZE, flags);
 	if (!(*inputarg))
 		return -ENOMEM;
+
+	if (hv_isolation_type_tdx()) {
+		ret = set_memory_decrypted((unsigned long)*inputarg, pgcount);
+		if (ret) {
+			/* It may be unsafe to free *inputarg */
+			*inputarg = NULL;
+			return ret;
+		}
+
+		memset(*inputarg, 0x00, pgcount * HV_HYP_PAGE_SIZE);
+	}
 
 	if (hv_root_partition) {
 		outputarg = (void **)this_cpu_ptr(hyperv_pcpu_output_arg);
@@ -388,6 +401,8 @@ int hv_common_cpu_die(unsigned int cpu)
 	unsigned long flags;
 	void **inputarg, **outputarg;
 	void *mem;
+	int pgcount = hv_root_partition ? 2 : 1;
+	int ret;
 
 	local_irq_save(flags);
 
@@ -401,6 +416,15 @@ int hv_common_cpu_die(unsigned int cpu)
 	}
 
 	local_irq_restore(flags);
+
+	if (hv_isolation_type_tdx()) {
+		ret = set_memory_encrypted((unsigned long)mem, pgcount);
+		if (ret)
+			pr_warn("Hyper-V: Failed to encrypt input arg on cpu%d: %d\n",
+				cpu, ret);
+		/* It's unsafe to free 'mem'. */
+		return 0;
+	}
 
 	kfree(mem);
 
