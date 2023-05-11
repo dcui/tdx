@@ -646,6 +646,10 @@ static void __init ms_hyperv_init_platform(void)
 
 		processor_count = *(u32 *)__va(0x802000);
 		BUG_ON(processor_count == 0);
+		if (processor_count >= NR_CPUS) {
+			processor_count =  NR_CPUS;
+			pr_warn("Hyper-V: using only %d/%d of the CPUs\n", NR_CPUS, processor_count);
+		}
 
 		entry = (struct memory_map_entry *)(__va(0x802000) + sizeof(struct memory_map_entry));
 		BUG_ON(entry->starting_gpn != 0);
