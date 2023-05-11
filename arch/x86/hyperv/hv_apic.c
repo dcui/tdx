@@ -113,7 +113,6 @@ static bool __send_ipi_mask_ex(const struct cpumask *mask, int vector,
 	unsigned long flags;
 	int nr_bank = 0;
 	u64 status = HV_STATUS_INVALID_PARAMETER;
-	int ret = 0;
 
 	if (!(ms_hyperv.hints & HV_X64_EX_PROCESSOR_MASKS_RECOMMENDED))
 		return false;
@@ -152,9 +151,9 @@ static bool __send_ipi_mask_ex(const struct cpumask *mask, int vector,
 	}
 
 	do {
-		ret = hv_do_rep_hypercall(HVCALL_SEND_IPI_EX, 0, nr_bank,
+		status = hv_do_rep_hypercall(HVCALL_SEND_IPI_EX, 0, nr_bank,
 					ipi_arg, NULL);
-	} while (ret == 0x78);
+	} while (status == 0x78);
 
 ipi_mask_ex_done:
 	local_irq_restore(flags);
@@ -168,7 +167,6 @@ static bool __send_ipi_mask(const struct cpumask *mask, int vector,
 	struct hv_send_ipi ipi_arg;
 	u64 status;
 	unsigned int weight;
-	int ret;
 
 	trace_hyperv_send_ipi_mask(mask, vector);
 
@@ -223,11 +221,11 @@ static bool __send_ipi_mask(const struct cpumask *mask, int vector,
 	}
 
 	do {
-		ret = hv_do_fast_hypercall16(HVCALL_SEND_IPI, ipi_arg.vector,
+		status = hv_do_fast_hypercall16(HVCALL_SEND_IPI, ipi_arg.vector,
 						ipi_arg.cpu_mask);
-	} while (ret == 0x78);
+	} while (status == 0x78);
 
-	return ((ret == 0) ? true : false);
+	return hv_result_success(status);
 
 do_ex_hypercall:
 	return __send_ipi_mask_ex(mask, vector, exclude_self);
@@ -237,7 +235,6 @@ static bool __send_ipi_one(int cpu, int vector)
 {
 	int vp = hv_cpu_number_to_vp_number(cpu);
 	u64 status;
-	int ret;
 
 	trace_hyperv_send_ipi_one(cpu, vector);
 
@@ -251,10 +248,10 @@ static bool __send_ipi_one(int cpu, int vector)
 		return __send_ipi_mask_ex(cpumask_of(cpu), vector, false);
 
 	do {
-		ret = hv_do_fast_hypercall16(HVCALL_SEND_IPI, vector, BIT_ULL(vp));
-	} while (ret == 0x78);
+		status = hv_do_fast_hypercall16(HVCALL_SEND_IPI, vector, BIT_ULL(vp));
+	} while (status == 0x78);
 
-	return ((ret == 0) ? true : false);
+	return hv_result_success(status);
 }
 
 static void hv_send_ipi(int cpu, int vector)
