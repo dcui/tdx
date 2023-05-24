@@ -335,6 +335,7 @@ static int read_msr(struct pt_regs *regs, struct ve_info *ve)
 
 	regs->ax = lower_32_bits(args.r11);
 	regs->dx = upper_32_bits(args.r11);
+	trace_printk("cdx: rdmsr: msr=%lx, val=%llx\n", regs->cx, args.r11);
 	return ve_instr_len(ve);
 }
 
@@ -355,6 +356,7 @@ static int write_msr(struct pt_regs *regs, struct ve_info *ve)
 	if (__tdx_hypercall(&args))
 		return -EIO;
 
+	trace_printk("cdx: wrmsr: msr=%lx, val=%llx\n", regs->cx, (u64)regs->dx << 32 | regs->ax);
 	return ve_instr_len(ve);
 }
 
@@ -414,11 +416,13 @@ static bool mmio_read(int size, unsigned long addr, unsigned long *val)
 	if (__tdx_hypercall_ret(&args))
 		return false;
 	*val = args.r11;
+	trace_printk("cdx: r: ptr=%lx, val=%lx, sz=%d\n", addr, *val, size);
 	return true;
 }
 
 static bool mmio_write(int size, unsigned long addr, unsigned long val)
 {
+	trace_printk("cdx: w: ptr=%lx, val=%lx, sz=%d\n", addr, val, size);
 	return !_tdx_hypercall(hcall_func(EXIT_REASON_EPT_VIOLATION), size,
 			       EPT_WRITE, addr, val);
 }
