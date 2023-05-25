@@ -825,9 +825,10 @@ static bool try_accept_page(phys_addr_t start, phys_addr_t end)
  */
 static bool tdx_map_gpa(phys_addr_t start, phys_addr_t end, bool enc)
 {
-	int max_retry_cnt = 3, retry_cnt = 0;
+	const int max_retries_per_page = 3;
 	struct tdx_hypercall_args args;
 	u64 map_fail_paddr, ret;
+	int retry_count = 0;
 
 	if (!enc) {
 		/* Set the shared (decrypted) bits: */
@@ -835,7 +836,7 @@ static bool tdx_map_gpa(phys_addr_t start, phys_addr_t end, bool enc)
 		end   |= cc_mkdec(0);
 	}
 
-	while (1) {
+	while (retry_count < max_retries_per_page) {
 		memset(&args, 0, sizeof(args));
 		args.r10 = TDX_HYPERCALL_STANDARD;
 		args.r11 = TDVMCALL_MAP_GPA;
@@ -844,27 +845,27 @@ static bool tdx_map_gpa(phys_addr_t start, phys_addr_t end, bool enc)
 
 		ret = __tdx_hypercall_ret(&args);
 		if (ret != TDVMCALL_STATUS_RETRY)
-			break;
+			return !ret;
 		/*
 		 * The guest must retry the operation for the pages in the
-		 * region starting at the GPA specified in R11. Make sure R11
-		 * contains a sane value.
+		 * region starting at the GPA specified in R11. R11 comes
+		 * from the untrusted VMM. Sanity check it.
 		 */
 		map_fail_paddr = args.r11;
 		if (map_fail_paddr < start || map_fail_paddr >= end)
 			return false;
 
+		/* "Consume" a retry without forward progress */
 		if (map_fail_paddr == start) {
-			retry_cnt++;
-			if (retry_cnt > max_retry_cnt)
-				return false;
-		} else {
-			retry_cnt = 0;
-			start = map_fail_paddr;
+			retry_count++;
+			continue;
 		}
+
+		start = map_fail_paddr;
+		retry_count = 0;
 	}
 
-	return !ret;
+	return false;
 }
 
 static bool tdx_enc_status_changed_phys(phys_addr_t start, phys_addr_t end,
