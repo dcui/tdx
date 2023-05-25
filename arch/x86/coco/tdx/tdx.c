@@ -910,6 +910,30 @@ static bool tdx_enc_status_changed(unsigned long vaddr, int numpages, bool enc)
 	return true;
 }
 
+static bool tdx_enc_status_change_prepare(unsigned long vaddr, int numpages,
+					  bool enc)
+{
+	/*
+	 * Only handle shared->private conversion here.
+	 * See the comment in tdx_early_init().
+	 */
+	if (enc)
+		return tdx_enc_status_changed(vaddr, numpages, enc);
+	return true;
+}
+
+static bool tdx_enc_status_change_finish(unsigned long vaddr, int numpages,
+					 bool enc)
+{
+	/*
+	 * Only handle private->shared conversion here.
+	 * See the comment in tdx_early_init().
+	 */
+	if (!enc)
+		return tdx_enc_status_changed(vaddr, numpages, enc);
+	return true;
+}
+
 void __init tdx_early_init(void)
 {
 	u64 cc_mask;
@@ -937,9 +961,35 @@ void __init tdx_early_init(void)
 	 */
 	physical_mask &= cc_mask - 1;
 
-	x86_platform.guest.enc_cache_flush_required = tdx_cache_flush_required;
-	x86_platform.guest.enc_tlb_flush_required   = tdx_tlb_flush_required;
-	x86_platform.guest.enc_status_change_finish = tdx_enc_status_changed;
+	/*
+	 * Touching privately mapped GPA that is not properly converted to
+	 * private with MapGPA and accepted leads to unrecoverable exit
+	 * to VMM.
+	 *
+	 * load_unaligned_zeropad() can touch memory that is not owned by
+	 * the caller, but just happened to next after the owned memory.
+	 * This load_unaligned_zeropad() behaviour makes it important when
+	 * kernel asks VMM to convert a GPA from shared to private or back.
+	 * Kernel must never have a page mapped into direct mapping (and
+	 * aliases) as private when the GPA is already converted to shared or
+	 * when GPA is not yet converted to private.
+	 *
+	 * guest.enc_status_change_prepare() called before adjusting direct
+	 * mapping and therefore it is responsible for converting the memory
+	 * to private.
+	 *
+	 * guest.enc_tlb_flush_required() called after adjusting direct mapping
+	 * and it converts the memory to shared.
+	 *
+	 * It is okay to have a shared mapping of memory that is not converted
+	 * properly. handle_mmio() knows how to deal with load_unaligned_zeropad()
+	 * stepping on it.
+	 */
+	x86_platform.guest.enc_status_change_prepare = tdx_enc_status_change_prepare;
+	x86_platform.guest.enc_status_change_finish  = tdx_enc_status_change_finish;
+
+	x86_platform.guest.enc_cache_flush_required  = tdx_cache_flush_required;
+	x86_platform.guest.enc_tlb_flush_required    = tdx_tlb_flush_required;
 
 	pr_info("Guest detected\n");
 }
