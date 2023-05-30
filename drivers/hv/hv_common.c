@@ -136,17 +136,6 @@ int hv_common_cpu_init(unsigned int cpu)
 
 	inputarg = (void **)this_cpu_ptr(hyperv_pcpu_input_arg);
 
-	if (hv_isolation_type_tdx()) {
-		ret = set_memory_decrypted((unsigned long)*inputarg, pgcount);
-		if (ret) {
-			/* It may be unsafe to free *inputarg */
-			*inputarg = NULL;
-			return ret;
-		}
-
-		memset(*inputarg, 0x00, pgcount * HV_HYP_PAGE_SIZE);
-	}
-
 	/*
 	 * hyperv_pcpu_input_arg and hyperv_pcpu_output_arg memory is already
 	 * allocated if this CPU was previously online and then taken offline
@@ -155,6 +144,17 @@ int hv_common_cpu_init(unsigned int cpu)
 		*inputarg = kmalloc(pgcount * HV_HYP_PAGE_SIZE, flags);
 		if (!(*inputarg))
 			return -ENOMEM;
+
+		if (hv_isolation_type_tdx()) {
+			ret = set_memory_decrypted((unsigned long)*inputarg, pgcount);
+			if (ret) {
+				/* It may be unsafe to free *inputarg */
+				*inputarg = NULL;
+				return ret;
+			}
+
+			memset(*inputarg, 0x00, pgcount * HV_HYP_PAGE_SIZE);
+		}
 
 		if (hv_root_partition) {
 			outputarg = (void **)this_cpu_ptr(hyperv_pcpu_output_arg);
@@ -174,27 +174,6 @@ int hv_common_cpu_init(unsigned int cpu)
 
 int hv_common_cpu_die(unsigned int cpu)
 {
-	void *mem;
-	int pgcount = hv_root_partition ? 2 : 1;
-	void **inputarg;
-	unsigned long flags;
-
-	local_irq_save(flags);
-
-	inputarg = (void **)this_cpu_ptr(hyperv_pcpu_input_arg);
-	mem = *inputarg;
-
-	local_irq_restore(flags);
-
-	if (hv_isolation_type_tdx()) {
-		int ret = set_memory_encrypted((unsigned long)mem, pgcount);
-		if (ret)
-			pr_warn("Hyper-V: Failed to encrypt input arg on cpu%d: %d\n",
-				cpu, ret);
-		/* It's unsafe to free 'mem'. */
-		return 0;
-	}
-
 	/*
 	 * The hyperv_pcpu_input_arg and hyperv_pcpu_output_arg memory
 	 * is not freed when the CPU goes offline as the hyperv_pcpu_input_arg
