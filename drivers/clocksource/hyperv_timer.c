@@ -531,6 +531,13 @@ static bool __init hv_init_tsc_clocksource(void)
 	if (ms_hyperv.features & HV_ACCESS_TSC_INVARIANT) {
 		hyperv_cs_tsc.rating = 250;
 		hyperv_cs_msr.rating = 250;
+
+		/*
+		 * When Invariant-TSC is available, we return true here so that
+		 * hv_init_clocksource() won't have to register hyperv_cs_msr
+		 * and read_hv_sched_clock_msr().
+		 */
+		return true;
 	}
 
 	if (!(ms_hyperv.features & HV_MSR_REFERENCE_TSC_AVAILABLE))
