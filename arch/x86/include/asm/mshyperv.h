@@ -26,7 +26,6 @@
 union hv_ghcb;
 
 DECLARE_STATIC_KEY_FALSE(isolation_type_snp);
-DECLARE_STATIC_KEY_FALSE(isolation_type_en_snp);
 DECLARE_STATIC_KEY_FALSE(isolation_type_tdx);
 
 typedef int (*hyperv_fill_flush_list_func)(
@@ -269,8 +268,7 @@ static inline void hv_vtom_init(void) {}
 static int hv_snp_boot_ap(int cpu, unsigned long start_ip) { return 0; }
 #endif
 
-extern bool hv_isolation_type_snp(void);
-extern bool hv_isolation_type_en_snp(void);
+bool hv_isolation_type_snp(void);
 
 static inline bool hv_is_synic_reg(unsigned int reg)
 {
