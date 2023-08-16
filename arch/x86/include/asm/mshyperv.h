@@ -27,6 +27,7 @@ union hv_ghcb;
 
 DECLARE_STATIC_KEY_FALSE(isolation_type_snp);
 DECLARE_STATIC_KEY_FALSE(isolation_type_en_snp);
+DECLARE_STATIC_KEY_FALSE(isolation_type_tdx);
 
 typedef int (*hyperv_fill_flush_list_func)(
 		struct hv_guest_mapping_flush_list *flush,
@@ -60,6 +61,7 @@ int hv_call_add_logical_proc(int node, u32 lp_index, u32 acpi_id);
 int hv_call_create_vp(int node, u64 partition_id, u32 vp_index, u32 flags);
 
 extern bool hv_isolation_type_en_snp(void);
+bool hv_isolation_type_tdx(void);
 
 static inline u64 hv_do_hypercall(u64 control, void *input, void *output)
 {
