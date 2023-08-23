@@ -495,15 +495,36 @@ int hv_snp_boot_ap(int cpu, unsigned long start_ip)
 	return ret;
 }
 
+#endif /* CONFIG_AMD_MEM_ENCRYPT */
+
+#if defined(CONFIG_AMD_MEM_ENCRYPT) || defined(CONFIG_INTEL_TDX_GUEST)
 void __init hv_vtom_init(void)
 {
+	enum hv_isolation_type type = hv_get_isolation_type();
+
+	switch (type) {
+	case HV_ISOLATION_TYPE_VBS:
+		fallthrough;
 	/*
 	 * By design, a VM using vTOM doesn't see the SEV setting,
 	 * so SEV initialization is bypassed and sev_status isn't set.
 	 * Set it here to indicate a vTOM VM.
 	 */
-	sev_status = MSR_AMD64_SNP_VTOM;
-	cc_vendor = CC_VENDOR_AMD;
+#ifdef CONFIG_AMD_MEM_ENCRYPT
+	case HV_ISOLATION_TYPE_SNP:
+		sev_status = MSR_AMD64_SNP_VTOM;
+		cc_vendor = CC_VENDOR_AMD;
+		break;
+#endif
+
+	case HV_ISOLATION_TYPE_TDX:
+		cc_vendor = CC_VENDOR_INTEL;
+		break;
+
+	default:
+		panic("hv_vtom_init: unsupported isolation type %d\n", type);
+	}
+
 	cc_set_mask(ms_hyperv.shared_gpa_boundary);
 	physical_mask &= ms_hyperv.shared_gpa_boundary - 1;
 
@@ -515,8 +536,7 @@ void __init hv_vtom_init(void)
 	/* Set WB as the default cache mode. */
 	mtrr_overwrite_state(NULL, 0, MTRR_TYPE_WRBACK);
 }
-
-#endif /* CONFIG_AMD_MEM_ENCRYPT */
+#endif
 
 enum hv_isolation_type hv_get_isolation_type(void)
 {
