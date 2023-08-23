@@ -24,6 +24,7 @@
 #include <asm/realmode.h>
 #include <asm/e820/api.h>
 #include <asm/desc.h>
+#include <uapi/asm/vmx.h>
 
 #ifdef CONFIG_AMD_MEM_ENCRYPT
 
@@ -186,7 +187,7 @@ bool hv_ghcb_negotiate_protocol(void)
 	return true;
 }
 
-void hv_ghcb_msr_write(u64 msr, u64 value)
+static void hv_ghcb_msr_write(u64 msr, u64 value)
 {
 	union hv_ghcb *hv_ghcb;
 	void **ghcb_base;
@@ -214,9 +215,8 @@ void hv_ghcb_msr_write(u64 msr, u64 value)
 
 	local_irq_restore(flags);
 }
-EXPORT_SYMBOL_GPL(hv_ghcb_msr_write);
 
-void hv_ghcb_msr_read(u64 msr, u64 *value)
+static void hv_ghcb_msr_read(u64 msr, u64 *value)
 {
 	union hv_ghcb *hv_ghcb;
 	void **ghcb_base;
@@ -246,7 +246,63 @@ void hv_ghcb_msr_read(u64 msr, u64 *value)
 			| ((u64)lower_32_bits(hv_ghcb->ghcb.save.rdx) << 32);
 	local_irq_restore(flags);
 }
-EXPORT_SYMBOL_GPL(hv_ghcb_msr_read);
+#endif /* CONFIG_AMD_MEM_ENCRYPT */
+
+#ifdef CONFIG_INTEL_TDX_GUEST
+static void hv_tdx_msr_write(u64 msr, u64 val)
+{
+	struct tdx_hypercall_args args = {
+		.r10 = TDX_HYPERCALL_STANDARD,
+		.r11 = EXIT_REASON_MSR_WRITE,
+		.r12 = msr,
+		.r13 = val,
+	};
+
+	u64 ret = __tdx_hypercall(&args);
+
+	WARN_ONCE(ret, "Failed to emulate MSR write: %lld\n", ret);
+}
+
+static void hv_tdx_msr_read(u64 msr, u64 *val)
+{
+	struct tdx_hypercall_args args = {
+		.r10 = TDX_HYPERCALL_STANDARD,
+		.r11 = EXIT_REASON_MSR_READ,
+		.r12 = msr,
+	};
+
+	u64 ret = __tdx_hypercall_ret(&args);
+
+	if (WARN_ONCE(ret, "Failed to emulate MSR read: %lld\n", ret))
+		*val = 0;
+	else
+		*val = args.r11;
+}
+#endif /* CONFIG_INTEL_TDX_GUEST */
+
+#if defined(CONFIG_AMD_MEM_ENCRYPT) || defined(CONFIG_INTEL_TDX_GUEST)
+void hv_ivm_msr_write(u64 msr, u64 value)
+{
+	if (!ms_hyperv.paravisor_present)
+		return;
+
+	if (hv_isolation_type_tdx())
+		hv_tdx_msr_write(msr, value);
+	else if (hv_isolation_type_snp())
+		hv_ghcb_msr_write(msr, value);
+}
+
+void hv_ivm_msr_read(u64 msr, u64 *value)
+{
+	if (!ms_hyperv.paravisor_present)
+		return;
+
+	if (hv_isolation_type_tdx())
+		hv_tdx_msr_read(msr, value);
+	else if (hv_isolation_type_snp())
+		hv_ghcb_msr_read(msr, value);
+}
+#endif
 
 /*
  * hv_mark_gpa_visibility - Set pages visible to host via hvcall.
@@ -367,6 +423,8 @@ static bool hv_is_private_mmio(u64 addr)
 
 	return false;
 }
+
+#ifdef CONFIG_AMD_MEM_ENCRYPT
 
 #define hv_populate_vmcb_seg(seg, gdtr_base)			\
 do {								\
